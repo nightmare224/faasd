@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -63,10 +64,40 @@ func MakeReadHandler(client *containerd.Client, externalClients []*sdk.Client) f
 
 			res = append(res, status)
 		}
+		res, err = includeExternalFunction(res, externalClients)
+		if err != nil {
+			log.Printf("[Read] error listing functions. Error: %s\n", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		body, _ := json.Marshal(res)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write(body)
 	}
+}
+func includeExternalFunction(functionStatus []types.FunctionStatus, externalClients []*sdk.Client) ([]types.FunctionStatus, error) {
+
+	functionnameSet := make(map[string]struct{})
+	for _, fn := range functionStatus {
+		functionnameSet[fn.Name] = struct{}{}
+	}
+
+	for _, client := range externalClients {
+		fns, err := client.GetFunctions(context.Background(), "openfaas-fn")
+		if err != nil {
+			log.Printf("[Read] error listing functions. Error: %s\n", err)
+			return nil, err
+		}
+		for _, fn := range fns {
+			if _, exist := functionnameSet[fn.Name]; !exist {
+				functionStatus = append(functionStatus, fn)
+				functionnameSet[fn.Name] = struct{}{}
+			}
+		}
+	}
+
+	return functionStatus, nil
+
 }
