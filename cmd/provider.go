@@ -1,16 +1,19 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 
 	"github.com/containerd/containerd"
 	bootstrap "github.com/openfaas/faas-provider"
+	"github.com/openfaas/faas-provider/auth"
 	"github.com/openfaas/faas-provider/logs"
 	"github.com/openfaas/faas-provider/proxy"
 	"github.com/openfaas/faas-provider/types"
@@ -19,10 +22,17 @@ import (
 	faasdlogs "github.com/openfaas/faasd/pkg/logs"
 	"github.com/openfaas/faasd/pkg/provider/config"
 	"github.com/openfaas/faasd/pkg/provider/handlers"
+	"github.com/openfaas/go-sdk"
 	"github.com/spf13/cobra"
 )
 
 const secretDirPermission = 0755
+
+type ExternalHostInfo struct {
+	Ip       string `json:"ip"`
+	Hostname string `json:"hostname"`
+	Port     string `json:"port"`
+}
 
 func makeProviderCmd() *cobra.Command {
 	var command = &cobra.Command{
@@ -35,6 +45,66 @@ func makeProviderCmd() *cobra.Command {
 	command.RunE = runProviderE
 
 	return command
+}
+
+func connectExternalProvider() ([]*sdk.Client, error) {
+	externalSecretMountPath := path.Join(faasdwd, "secrets/external")
+	if err := ensureWorkingDir(externalSecretMountPath); err != nil {
+		return nil, err
+	}
+
+	var clients []*sdk.Client = nil
+	files, _ := os.ReadDir(externalSecretMountPath)
+	hostsfile, err := os.OpenFile("/etc/hosts", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	defer hostsfile.Close()
+	for _, file := range files {
+		if !file.IsDir() {
+			continue
+		}
+		secretPath := path.Join(externalSecretMountPath, file.Name())
+		reader := auth.ReadBasicAuthFromDisk{
+			SecretMountPath: secretPath,
+		}
+		credentials, err := reader.Read()
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+		data, hostErr := os.ReadFile(path.Join(secretPath, "basic-auth-host"))
+		hostinfo := ExternalHostInfo{}
+		if hostErr != nil {
+			err := fmt.Errorf("unable to load %s", hostErr)
+			log.Fatal(err)
+			continue
+		}
+		json.Unmarshal(data, &hostinfo)
+
+		hosturl := fmt.Sprintf("http://%s:%s", hostinfo.Ip, hostinfo.Ip)
+		if hostinfo.Hostname != "" {
+			_, err := hostsfile.WriteString(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname))
+			if err != nil {
+				err := fmt.Errorf("cannot write hosts file: %s", err)
+				log.Fatal(err)
+				continue
+			}
+			hosturl = fmt.Sprintf("http://%s:%s", hostinfo.Hostname, hostinfo.Ip)
+		}
+		// writeHostsErr := os.WriteFile("/etc/hosts", []byte(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname)), 0x0644)
+
+		gatewayURL, _ := url.Parse(hosturl)
+		auth := &sdk.BasicAuth{
+			Username: credentials.User,
+			Password: credentials.Password,
+		}
+		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
+		clients = append(clients, client)
+	}
+
+	return clients, nil
 }
 
 func runProviderE(cmd *cobra.Command, _ []string) error {
@@ -62,14 +132,14 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	writeHostsErr := ioutil.WriteFile(path.Join(wd, "hosts"),
+	writeHostsErr := os.WriteFile(path.Join(wd, "hosts"),
 		[]byte(`127.0.0.1	localhost`), workingDirectoryPermission)
 
 	if writeHostsErr != nil {
 		return fmt.Errorf("cannot write hosts file: %s", writeHostsErr)
 	}
 
-	writeResolvErr := ioutil.WriteFile(path.Join(wd, "resolv.conf"),
+	writeResolvErr := os.WriteFile(path.Join(wd, "resolv.conf"),
 		[]byte(`nameserver 8.8.8.8`), workingDirectoryPermission)
 
 	if writeResolvErr != nil {
