@@ -9,9 +9,10 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/openfaas/faas-provider/types"
+	"github.com/openfaas/go-sdk"
 )
 
-func MakeReadHandler(client *containerd.Client) func(w http.ResponseWriter, r *http.Request) {
+func MakeReadHandler(client *containerd.Client, externalClients []*sdk.Client) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 

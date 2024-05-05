@@ -82,8 +82,7 @@ func connectExternalProvider() ([]*sdk.Client, error) {
 			continue
 		}
 		json.Unmarshal(data, &hostinfo)
-
-		hosturl := fmt.Sprintf("http://%s:%s", hostinfo.Ip, hostinfo.Ip)
+		hosturl := fmt.Sprintf("http://%s:%s", hostinfo.Ip, hostinfo.Port)
 		if hostinfo.Hostname != "" {
 			_, err := hostsfile.WriteString(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname))
 			if err != nil {
@@ -91,7 +90,7 @@ func connectExternalProvider() ([]*sdk.Client, error) {
 				log.Fatal(err)
 				continue
 			}
-			hosturl = fmt.Sprintf("http://%s:%s", hostinfo.Hostname, hostinfo.Ip)
+			hosturl = fmt.Sprintf("http://%s:%s", hostinfo.Hostname, hostinfo.Port)
 		}
 		// writeHostsErr := os.WriteFile("/etc/hosts", []byte(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname)), 0x0644)
 
@@ -102,6 +101,7 @@ func connectExternalProvider() ([]*sdk.Client, error) {
 		}
 		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
 		clients = append(clients, client)
+		log.Printf("Connect with the external client: %s\n", hosturl)
 	}
 
 	return clients, nil
@@ -158,6 +158,8 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	defer client.Close()
 
+	externalClients, err := connectExternalProvider()
+
 	invokeResolver := handlers.NewInvokeResolver(client)
 
 	baseUserSecretsPath := path.Join(wd, "secrets")
@@ -171,7 +173,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		FunctionProxy:   proxy.NewHandlerFunc(*config, invokeResolver, false),
 		DeleteFunction:  handlers.MakeDeleteHandler(client, cni),
 		DeployFunction:  handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull),
-		FunctionLister:  handlers.MakeReadHandler(client),
+		FunctionLister:  handlers.MakeReadHandler(client, externalClients),
 		FunctionStatus:  handlers.MakeReplicaReaderHandler(client),
 		ScaleFunction:   handlers.MakeReplicaUpdateHandler(client, cni),
 		UpdateFunction:  handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),

@@ -311,6 +311,9 @@ github.com/openfaas/faas-provider/httputil
 github.com/openfaas/faas-provider/logs
 github.com/openfaas/faas-provider/proxy
 github.com/openfaas/faas-provider/types
+# github.com/openfaas/go-sdk v0.2.9
+## explicit; go 1.21
+github.com/openfaas/go-sdk
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
