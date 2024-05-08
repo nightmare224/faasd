@@ -20,6 +20,7 @@ import (
 	"github.com/openfaas/faas-provider/logs"
 	"github.com/openfaas/faas-provider/proxy"
 	"github.com/openfaas/faas-provider/types"
+	"github.com/openfaas/faasd/pkg"
 	faasd "github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/cninetwork"
 	faasdlogs "github.com/openfaas/faasd/pkg/logs"
@@ -200,15 +201,19 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	localResolver := pkg.NewLocalResolver(path.Join(faasdwd, "hosts"))
+	go localResolver.Start()
+
 	bootstrapHandlers := types.FaaSHandlers{
-		FunctionProxy:   proxy.NewHandlerFunc(*config, invokeResolver, false),
-		DeleteFunction:  handlers.MakeDeleteHandler(client, cni),
-		DeployFunction:  handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull),
-		FunctionLister:  handlers.MakeReadHandler(client, externalClients),
-		FunctionStatus:  handlers.MakeReplicaReaderHandler(client),
-		ScaleFunction:   handlers.MakeReplicaUpdateHandler(client, cni),
-		UpdateFunction:  handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
-		Health:          func(w http.ResponseWriter, r *http.Request) {},
+		FunctionProxy:  proxy.NewHandlerFunc(*config, invokeResolver, false),
+		DeleteFunction: handlers.MakeDeleteHandler(client, cni),
+		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull),
+		FunctionLister: handlers.MakeReadHandler(client, externalClients),
+		FunctionStatus: handlers.MakeReplicaReaderHandler(client),
+		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
+		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
+		// Health:          func(w http.ResponseWriter, r *http.Request) {},
+		Health:          handlers.MakeHealthHandler(localResolver),
 		Info:            handlers.MakeInfoHandler(Version, GitCommit),
 		ListNamespaces:  handlers.MakeNamespacesLister(client),
 		Secrets:         handlers.MakeSecretHandler(client.NamespaceService(), baseUserSecretsPath),
