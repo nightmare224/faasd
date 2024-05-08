@@ -6,10 +6,13 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"slices"
+	"time"
 
 	"github.com/containerd/containerd"
 	bootstrap "github.com/openfaas/faas-provider"
@@ -103,8 +106,36 @@ func connectExternalProvider() ([]*sdk.Client, error) {
 		clients = append(clients, client)
 		log.Printf("Connect with the external client: %s\n", hosturl)
 	}
+	if clients != nil {
+		clients = measureRTT(clients)
+	}
 
 	return clients, nil
+}
+
+func measureRTT(clients []*sdk.Client) []*sdk.Client {
+
+	var sortedRTTClients []*sdk.Client
+	var RTTs []time.Duration
+	RTTtoIdx := make(map[time.Duration]int)
+	for idx, client := range clients {
+		startTime := time.Now()
+		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
+		if err != nil {
+			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
+		}
+		rtt := time.Since(startTime)
+		conn.Close()
+		RTTtoIdx[rtt] = idx
+		RTTs = append(RTTs, rtt)
+		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
+	}
+	slices.Sort(RTTs)
+	for _, rtt := range RTTs {
+		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
+	}
+
+	return sortedRTTClients
 }
 
 func runProviderE(cmd *cobra.Command, _ []string) error {
