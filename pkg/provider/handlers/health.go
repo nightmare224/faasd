@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/openfaas/faasd/pkg"
@@ -33,6 +35,11 @@ func MakeHealthHandler(localResolver pkg.Resolver) http.HandlerFunc {
 	go localResolver.Get("prometheus", got, time.Second*5)
 	ipAddress := <-got
 	close(got)
+	promClient, _ := api.NewClient(api.Config{
+		Address: fmt.Sprintf("http://%s:9090", ipAddress),
+	})
+	promAPIClient := v1.NewAPI(promClient)
+	checkOverload := MeasurePressure(promAPIClient)
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		overload_showed := r.URL.Query().Get("overload")
@@ -41,12 +48,8 @@ func MakeHealthHandler(localResolver pkg.Resolver) http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		overload, err := MeasurePressure(ipAddress)
-		if err != nil {
-			fmt.Printf("Unable to get metric from pormetheus: %s", err)
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+		// overload, err := MeasurePressure(promAPIClient)
+		overload := checkOverload()
 
 		jsonOut, err := json.Marshal(CustomHealth{overload})
 		if err != nil {
@@ -89,41 +92,40 @@ func MakeHealthHandler(localResolver pkg.Resolver) http.HandlerFunc {
 // }
 
 // add the overloaded infomation in it
-func MeasurePressure(ipAddress string) (bool, error) {
-
-	address := fmt.Sprintf("http://%s:9090", ipAddress)
-	client, err := api.NewClient(api.Config{
-		Address: address,
-	})
-	if err != nil {
-		err := fmt.Errorf("error creating client: %v", err)
-		return false, err
-	}
-	v1api := v1.NewAPI(client)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// start query
+func MeasurePressure(client v1.API) func() bool {
+	// use closure to store the value
 	overload := false
-	// cpu
-	cpuQuery := "1 - (rate(node_cpu_seconds_total{mode=\"idle\"}[1m]))"
-	CPULoad, err := queryResourceAverageLoad(v1api, ctx, cpuQuery)
-	if err != nil {
-		err := fmt.Errorf("CPU usage unavailable from Prometheus: %v", err)
-		return false, err
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			// start query
+			// cpu
+			cpuQuery := "1 - (rate(node_cpu_seconds_total{mode=\"idle\"}[1m]))"
+			CPULoad, err := queryResourceAverageLoad(client, ctx, cpuQuery)
+			if err != nil {
+				log.Fatalf("CPU usage unavailable from Prometheus: %v", err)
+				break
+			}
+			overload = overload || (CPULoad > CPUOverloadThreshold)
+			// memory
+			// memQuery := "1 - avg_over_time(node_memory_MemAvailable_bytes[1m])/node_memory_MemTotal_bytes"
+			memQuery := "1 - ((avg_over_time(node_memory_MemFree_bytes[1m]) + avg_over_time(node_memory_Cached_bytes[1m]) + avg_over_time(node_memory_Buffers_bytes[1m])) / node_memory_MemTotal_bytes)"
+			MemLoad, err := queryResourceAverageLoad(client, ctx, memQuery)
+			if err != nil {
+				log.Fatalf("memory usage unavailable from Prometheus: %v", err)
+				break
+			}
+			overload = overload || (MemLoad > MemOverloadThreshold)
+			time.Sleep(time.Second * 10)
+		}
+		// bad exit
+		os.Exit(1)
+	}()
+	return func() bool {
+		return overload
 	}
-	overload = overload || (CPULoad > CPUOverloadThreshold)
-	// memory
-	// memQuery := "1 - avg_over_time(node_memory_MemAvailable_bytes[1m])/node_memory_MemTotal_bytes"
-	memQuery := "1 - ((avg_over_time(node_memory_MemFree_bytes[1m]) + avg_over_time(node_memory_Cached_bytes[1m]) + avg_over_time(node_memory_Buffers_bytes[1m])) / node_memory_MemTotal_bytes)"
-	MemLoad, err := queryResourceAverageLoad(v1api, ctx, memQuery)
-	if err != nil {
-		err := fmt.Errorf("memory usage unavailable from Prometheus: %v", err)
-		return false, err
-	}
-	overload = overload || (MemLoad > MemOverloadThreshold)
-
-	return overload, nil
+	// return overload, nil
 }
 
 // func getPrometh
