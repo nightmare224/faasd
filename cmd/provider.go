@@ -24,6 +24,7 @@ import (
 	faasd "github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/cninetwork"
 	faasdlogs "github.com/openfaas/faasd/pkg/logs"
+	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/provider/config"
 	"github.com/openfaas/faasd/pkg/provider/handlers"
 	"github.com/openfaas/go-sdk"
@@ -190,7 +191,21 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	defer client.Close()
 
-	externalClients, err := connectExternalProvider()
+	var externalClients []*sdk.Client
+	// externalClients, err := connectExternalProvider()
+	if err != nil {
+		return fmt.Errorf("cannot connect external provider: %s", err)
+	}
+
+	// create the catalog to store p
+	c := make(catalog.Catalog)
+	// create catalog
+	infoChan, err := catalog.InitInfoNetwork(c)
+	if err != nil {
+		return fmt.Errorf("cannot init info network: %s", err)
+	}
+	//pass infoChan to every function to publish the new info
+	fmt.Println("infoChan:", infoChan)
 
 	invokeResolver := handlers.NewInvokeResolver(client)
 
@@ -205,7 +220,8 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	go localResolver.Start()
 
 	bootstrapHandlers := types.FaaSHandlers{
-		FunctionProxy:  proxy.NewHandlerFunc(*config, invokeResolver, false),
+		FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
+		// FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver),
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni),
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		FunctionLister: handlers.MakeReadHandler(client, externalClients),
