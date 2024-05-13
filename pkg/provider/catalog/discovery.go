@@ -33,16 +33,19 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 		err := fmt.Errorf("error connecting to peer %s", err)
 		log.Fatal(err)
 	}
-	ir, subErr := subscribeInfoRoom(ctx, n.ps, pi.ID.String(), n.h.ID(), n.c)
+	infoRoomName := pi.ID.String()
+	// init the catagory for the find peer
+	n.c[infoRoomName] = &Node{
+		NodeInfo: NodeInfo{},
+		NodeMetadata: NodeMetadata{
+			// do need info chan for the external peer
+			infoChan: nil,
+		},
+	}
+	_, subErr := subscribeInfoRoom(ctx, n.ps, infoRoomName, n.h.ID(), n.c)
 	if subErr != nil {
 		err := fmt.Errorf("error subcribe to info room: %s", err)
 		log.Fatal(err)
 	}
-	n.c[pi.ID.String()] = &Node{
-		NodeInfo: NodeInfo{},
-		NodeMetadata: NodeMetadata{
-			// would be nil
-			infoChan: ir.GetInfoChan(),
-		},
-	}
+
 }

@@ -55,12 +55,11 @@ func subscribeInfoRoom(ctx context.Context, ps *pubsub.PubSub, infoRoomName stri
 	// subcribe to room
 	if infoRoomName != selfID.String() {
 		go ir.subscribeLoop(c[infoRoomName])
-		log.Printf("Info room join: %s\n", sub.Topic())
+		log.Printf("Join info room: %s\n", infoRoomName)
 	} else { // create a room
 		// new the channel to publish the infomation
 		ir.infoChan = make(chan *NodeInfo)
 		go ir.publishLoop()
-		log.Printf("Info room create: %s\n", sub.Topic())
 	}
 
 	return ir, nil
@@ -70,10 +69,12 @@ func (ir *InfoRoom) publishLoop() {
 		info := <-ir.infoChan
 		infoBytes, err := json.Marshal(info)
 		if err != nil {
+			log.Printf("serialized info message error: %s\n", err)
 			continue
 		}
 		err = ir.topic.Publish(ir.ctx, infoBytes)
 		if err != nil {
+			log.Printf("publish info message error: %s\n", err)
 			continue
 		}
 	}
@@ -84,19 +85,24 @@ func (ir *InfoRoom) subscribeLoop(node *Node) {
 		msg, err := ir.sub.Next(ir.ctx)
 		if err != nil {
 			// close(ir.Messages)
-			return
-		}
-		// only forward messages delivered by others
-		if msg.ReceivedFrom == ir.selfID {
+			// return
+			log.Printf("receive info message error: %s\n", err)
 			continue
 		}
+
+		// this should not happen as it it would not enter this subscribe loop
+		// only process messages delivered by others
+		// if msg.ReceivedFrom == ir.selfID {
+		// 	continue
+		// }
 
 		info := new(NodeInfo)
 		err = json.Unmarshal(msg.Data, info)
 		if err != nil {
+			log.Printf("deserialized info message error: %s\n", err)
 			continue
 		}
-		fmt.Println("Receive info:", info)
+		fmt.Println("Receive info from publisher:", info)
 		// 	// send valid messages onto the Messages channel
 		// 	cr.Messages <- cm
 		// c[ir.selfID.String()] = info

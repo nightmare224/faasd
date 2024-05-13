@@ -1,8 +1,8 @@
 package catalog
 
 type NodeInfo struct {
-	AvailableFunctions map[string]struct{} `json:"availableFunctions"`
-	Overload           bool                `json:"overload"`
+	AvailableFunctions []string `json:"availableFunctions"`
+	Overload           bool     `json:"overload"`
 }
 
 // key is the peer ID in string
