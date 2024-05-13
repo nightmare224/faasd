@@ -103,9 +103,6 @@ func (ir *InfoRoom) subscribeLoop(node *Node) {
 			continue
 		}
 		fmt.Println("Receive info from publisher:", info)
-		// 	// send valid messages onto the Messages channel
-		// 	cr.Messages <- cm
-		// c[ir.selfID.String()] = info
 
 		// update the info in the node
 		node.NodeInfo = *info

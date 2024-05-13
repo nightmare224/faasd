@@ -64,6 +64,8 @@ func MakeReadHandler(client *containerd.Client, externalClients []*sdk.Client) f
 
 			res = append(res, status)
 		}
+
+		// do not use the record in catalog as it need detail information of function
 		res, err = includeExternalFunction(res, externalClients)
 		if err != nil {
 			log.Printf("[Read] error listing functions. Error: %s\n", err)

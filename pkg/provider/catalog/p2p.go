@@ -9,7 +9,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
-var ip string = "0.0.0.0"
+var ip string = "10.211.55.24"
 
 func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	ctx := context.Background()
@@ -24,11 +24,10 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 		return nil, err
 	}
 	// the info of itself
-	c[host.ID().String()] = &Node{
-		NodeInfo: NodeInfo{},
-		NodeMetadata: NodeMetadata{
-			infoChan: ir.infoChan,
-		},
+	c[selfCatagoryKey] = &Node{
+		NodeInfo:     NodeInfo{},
+		NodeMetadata: NodeMetadata{},
+		infoChan:     ir.infoChan,
 	}
 
 	return ir.infoChan, nil

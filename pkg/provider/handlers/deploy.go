@@ -21,6 +21,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/openfaas/faas-provider/types"
 	cninetwork "github.com/openfaas/faasd/pkg/cninetwork"
+	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/service"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,7 +30,7 @@ import (
 const annotationLabelPrefix = "com.openfaas.annotations."
 
 // MakeDeployHandler returns a handler to deploy a function
-func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath string, alwaysPull bool) func(w http.ResponseWriter, r *http.Request) {
+func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath string, alwaysPull bool, c catalog.Catalog) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Body == nil {
@@ -82,6 +83,8 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 			http.Error(w, deployErr.Error(), http.StatusBadRequest)
 			return
 		}
+
+		defer catalog.AddAvailableFunctions(name, c)
 	}
 }
 

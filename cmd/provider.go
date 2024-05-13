@@ -18,7 +18,6 @@ import (
 	bootstrap "github.com/openfaas/faas-provider"
 	"github.com/openfaas/faas-provider/auth"
 	"github.com/openfaas/faas-provider/logs"
-	"github.com/openfaas/faas-provider/proxy"
 	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg"
 	faasd "github.com/openfaas/faasd/pkg"
@@ -109,12 +108,47 @@ func connectExternalProvider() ([]*sdk.Client, error) {
 		log.Printf("Connect with the external client: %s\n", hosturl)
 	}
 	if clients != nil {
-		clients = measureRTT(clients)
+		// clients = measureRTT(clients)
+		rankClientsByRTT(clients)
 	}
 
 	return clients, nil
 }
 
+type FaaSClient struct {
+	*sdk.Client
+	P2PID string
+}
+
+// put it from the fastest client to slowest client
+func rankClientsByRTT(clients []*sdk.Client) {
+
+	// make this run every
+	var sortedRTTClients []*sdk.Client
+	var RTTs []time.Duration
+	RTTtoIdx := make(map[time.Duration]int)
+	for idx, client := range clients {
+		startTime := time.Now()
+		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
+		if err != nil {
+			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
+		}
+		rtt := time.Since(startTime)
+		conn.Close()
+		RTTtoIdx[rtt] = idx
+		RTTs = append(RTTs, rtt)
+		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
+	}
+	slices.Sort(RTTs)
+	for _, rtt := range RTTs {
+		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
+	}
+	// copy back to original array
+	for i, client := range sortedRTTClients {
+		clients[i] = client
+	}
+
+}
 func measureRTT(clients []*sdk.Client) []*sdk.Client {
 
 	var sortedRTTClients []*sdk.Client
@@ -191,21 +225,21 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	defer client.Close()
 
-	var externalClients []*sdk.Client
-	// externalClients, err := connectExternalProvider()
-	if err != nil {
-		return fmt.Errorf("cannot connect external provider: %s", err)
-	}
-
 	// create the catalog to store p
 	c := make(catalog.Catalog)
 	// create catalog
-	infoChan, err := catalog.InitInfoNetwork(c)
-	if err != nil {
-		return fmt.Errorf("cannot init info network: %s", err)
+	// infoChan, err := catalog.InitInfoNetwork(c)
+	_, InitNetworkErr := catalog.InitInfoNetwork(c)
+	if InitNetworkErr != nil {
+		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
 	}
-	//pass infoChan to every function to publish the new info
-	fmt.Println("infoChan:", infoChan)
+
+	var externalClients []*sdk.Client
+	// externalClients, err := connectExternalProvider()
+	// if err != nil {
+	// 	return fmt.Errorf("cannot connect external provider: %s", err)
+	// }
+	// var exteranlFaaSClients []FaaSClient
 
 	invokeResolver := handlers.NewInvokeResolver(client)
 
@@ -220,10 +254,10 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	go localResolver.Start()
 
 	bootstrapHandlers := types.FaaSHandlers{
-		FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
-		// FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver),
+		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
+		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, externalClients, c),
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni),
-		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull),
+		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, externalClients),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client),
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
