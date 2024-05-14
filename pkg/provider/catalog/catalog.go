@@ -12,10 +12,12 @@ type NodeInfo struct {
 type Catalog map[string]*Node
 
 type NodeMetadata struct {
-	Ip       string `json:"ip"`
-	Hostname string `json:"hostname"`
-	FaasPort string `json:"faasPort"`
-	FaasPath string `json:"faasPath"`
+	Ip           string `json:"ip"`
+	Hostname     string `json:"hostname"`
+	FaasPort     string `json:"faasPort"`
+	FaasPath     string `json:"faasPath"`
+	FaaSUser     string `json:"faasUser"`
+	FaaSPassword string `json:"faasPassword"`
 }
 
 type Node struct {

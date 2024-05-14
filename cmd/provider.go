@@ -115,11 +115,6 @@ func connectExternalProvider() ([]*sdk.Client, error) {
 	return clients, nil
 }
 
-type FaaSClient struct {
-	*sdk.Client
-	P2PID string
-}
-
 // put it from the fastest client to slowest client
 func rankClientsByRTT(clients []*sdk.Client) {
 
