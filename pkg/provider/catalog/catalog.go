@@ -1,6 +1,11 @@
 package catalog
 
 import (
+	"fmt"
+	"io"
+	"log"
+
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/openfaas/faas-provider/types"
 )
 
@@ -76,20 +81,23 @@ func (c Catalog) ListAvailableFunctions(infoLevel InfoLevel) []types.FunctionSta
 	return functionStatus
 }
 
-func (c Catalog) InitAvailableFunctions(fns []types.FunctionStatus) {
-	c[selfCatagoryKey].AvailableFunctions = fns
+// the handler of
+func (c Catalog) initAvailableFunctions(stream network.Stream) {
+	defer stream.Close()
 
-	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
+	// TODO: receive the initialize available function
+	buf := make([]byte, 256)
+	n, err := stream.Read(buf)
+	if err != nil && err != io.EOF {
+		log.Fatalf("Failed to read from stream: %v", err)
+	}
+
+	message := string(buf[:n])
+	fmt.Printf("Received direct message: %s\n", message)
 }
 
-// func ListAvailableFunctions(c Catalog) {
-// 	for _, fn := range c[selfCatagoryKey].AvailableFunctions {
-// 		if functionName == fn {
-// 			return
-// 		}
-// 	}
-// 	functionSet := append(c[selfCatagoryKey].AvailableFunctions, functionName)
-// 	c[selfCatagoryKey].AvailableFunctions = functionSet
+// func (c Catalog) InitAvailableFunctions(fns []types.FunctionStatus) {
+// 	c[selfCatagoryKey].AvailableFunctions = fns
 
 // 	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
 // }

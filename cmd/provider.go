@@ -230,11 +230,11 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
 	}
 	// init available function to catalog
-	fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
-	if err != nil {
-		return fmt.Errorf("cannot init available function: %s", err)
-	}
-	c.InitAvailableFunctions(fns)
+	// fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
+	// if err != nil {
+	// 	return fmt.Errorf("cannot init available function: %s", err)
+	// }
+	// c.InitAvailableFunctions(fns)
 
 	var externalClients []*sdk.Client
 	// externalClients, err := connectExternalProvider()

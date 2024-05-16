@@ -10,6 +10,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	ma "github.com/multiformats/go-multiaddr"
@@ -26,10 +27,15 @@ type discoveryNotifee struct {
 	c  Catalog
 }
 
+type faasNotifiee struct {
+	h host.Host
+}
+
 func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	// setup mDNS discovery to find local peers
 	switch mode {
 	case "static":
+		h.Network().Notify(&faasNotifiee{h: h})
 		return staticDiscovery(&discoveryNotifee{h: h, ps: ps, c: c})
 	case "mdns":
 		s := mdns.NewMdnsService(h, DiscoveryServiceTag, &discoveryNotifee{h: h, ps: ps, c: c})
@@ -39,7 +45,7 @@ func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	}
 }
 func staticDiscovery(n *discoveryNotifee) error {
-
+	// return nil
 	dir, _ := os.ReadDir(pubKeyPeerPath)
 	for _, entry := range dir {
 		// filename is ip
@@ -58,6 +64,7 @@ func staticDiscovery(n *discoveryNotifee) error {
 			ID:    peerID,
 			Addrs: []ma.Multiaddr{maddr},
 		}
+		// this is when found peer subjectly, not objectly
 		n.HandlePeerFound(pi)
 	}
 	return nil
@@ -98,6 +105,10 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 
 }
 
+// func InitAvailableFunctions(host host.Host, peerID peer.ID) {
+// 	host.NewStream()
+// }
+
 func readIDFromPubKey(filepath string) peer.ID {
 	pubKeyData, err := os.ReadFile(filepath)
 	if err != nil {
@@ -116,4 +127,39 @@ func readIDFromPubKey(filepath string) peer.ID {
 	}
 
 	return idFromKey
+}
+
+func (n *faasNotifiee) Listen(network network.Network, maddr ma.Multiaddr) {
+
+}
+
+func (n *faasNotifiee) ListenClose(network network.Network, maddr ma.Multiaddr) {
+
+}
+
+// send the initial available function if the new peer join
+func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
+	// fmt.Println("Peer store:", n.h.Peerstore().Peers())
+	// if do not do it concurrently, the peers will block to try new stream at the same time
+	go func() {
+		fmt.Printf("New Peer Join: %s\n", conn.RemotePeer())
+		stream, err := n.h.NewStream(context.Background(), conn.RemotePeer(), faasProtocolID)
+		if err != nil {
+			log.Fatalf("Failed to open stream: %v", err)
+			return
+		}
+		defer stream.Close()
+		// TODO: Send Inital avaialable function
+		message := "Hello, specific peer!"
+		_, err = stream.Write([]byte(message))
+		if err != nil {
+			log.Fatalf("Failed to send message: %v", err)
+		}
+		fmt.Println("Message sent to specific peer")
+	}()
+
+}
+
+func (n *faasNotifiee) Disconnected(network network.Network, conn network.Conn) {
+
 }

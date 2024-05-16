@@ -10,6 +10,8 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 const ip = "10.211.55.24"
@@ -17,11 +19,18 @@ const port = "8282"
 
 // const pubKeySelf = "/tmp/faasd-p2p/pubKey"
 const privKeySelf = "/opt/p2p/privKey"
+const faasProtocolID = protocol.ID("/faas-initialize/1.0.0")
 
 func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	ctx := context.Background()
-	host := newlibp2pHost()
+	host := newLibp2pHost()
 	ps := newPubSubRouter(ctx, host)
+
+	// create the stream for initialization
+	host.SetStreamHandler(faasProtocolID, func(stream network.Stream) {
+		c.initAvailableFunctions(stream)
+	})
+
 	// discovery the other host and join their room
 	err := setupDiscovery(host, ps, c)
 	if err != nil {
@@ -45,7 +54,7 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	return ir.infoChan, nil
 }
 
-func newlibp2pHost() host.Host {
+func newLibp2pHost() host.Host {
 
 	privKeyData, err := os.ReadFile(privKeySelf)
 	if err != nil {
