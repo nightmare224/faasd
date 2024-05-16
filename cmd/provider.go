@@ -220,6 +220,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	defer client.Close()
 
+	// infoLevel := catalog.ClusterLevel
 	// create the catalog to store p
 	c := make(catalog.Catalog)
 	// create catalog
@@ -228,6 +229,12 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	if InitNetworkErr != nil {
 		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
 	}
+	// init available function to catalog
+	fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
+	if err != nil {
+		return fmt.Errorf("cannot init available function: %s", err)
+	}
+	c.InitAvailableFunctions(fns)
 
 	var externalClients []*sdk.Client
 	// externalClients, err := connectExternalProvider()
@@ -235,7 +242,8 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	// 	return fmt.Errorf("cannot connect external provider: %s", err)
 	// }
 	// var exteranlFaaSClients []FaaSClient
-	faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
+
+	// faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 
 	invokeResolver := handlers.NewInvokeResolver(client)
 
@@ -254,7 +262,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, externalClients, c),
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni),
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
-		FunctionLister: handlers.MakeReadHandler(client, faasP2PMappingList),
+		FunctionLister: handlers.MakeReadHandler(client, c),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client),
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),

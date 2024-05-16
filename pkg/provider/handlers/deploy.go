@@ -114,7 +114,7 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 							EnvProcess:        f.envProcess,
 							CreatedAt:         f.createdAt,
 						}
-						catalog.AddAvailableFunctions(fs, c)
+						c.AddAvailableFunctions(fs)
 						return
 					}
 				}
