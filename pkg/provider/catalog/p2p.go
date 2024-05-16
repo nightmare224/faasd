@@ -12,11 +12,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 )
 
-const ip = "10.211.55.27"
+const ip = "10.211.55.24"
 const port = "8282"
 
 // const pubKeySelf = "/tmp/faasd-p2p/pubKey"
-const privKeySelf = "/tmp/faasd-p2p/privKey"
+const privKeySelf = "/opt/p2p/privKey"
 
 func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	ctx := context.Background()
@@ -35,9 +35,11 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	}
 	// the info of itself
 	c[selfCatagoryKey] = &Node{
-		NodeInfo:     NodeInfo{},
-		NodeMetadata: NodeMetadata{},
-		infoChan:     ir.infoChan,
+		NodeInfo: NodeInfo{},
+		NodeMetadata: NodeMetadata{
+			Ip: extractIP4fromMultiaddr(host.Addrs()[0]),
+		},
+		infoChan: ir.infoChan,
 	}
 
 	return ir.infoChan, nil

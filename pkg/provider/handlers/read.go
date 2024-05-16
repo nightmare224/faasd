@@ -10,10 +10,10 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/openfaas/faas-provider/types"
-	"github.com/openfaas/go-sdk"
+	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
-func MakeReadHandler(client *containerd.Client, externalClients []*sdk.Client) func(w http.ResponseWriter, r *http.Request) {
+func MakeReadHandler(client *containerd.Client, faasP2PMappingList []catalog.FaasP2PMapping) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -66,9 +66,9 @@ func MakeReadHandler(client *containerd.Client, externalClients []*sdk.Client) f
 		}
 
 		// do not use the record in catalog as it need detail information of function
-		res, err = includeExternalFunction(res, externalClients)
+		// if it is from internal client, then don't run this one, as it hit the same API
+		res, err = includeExternalFunction(res, faasP2PMappingList)
 		if err != nil {
-			log.Printf("[Read] error listing functions. Error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -79,17 +79,17 @@ func MakeReadHandler(client *containerd.Client, externalClients []*sdk.Client) f
 		w.Write(body)
 	}
 }
-func includeExternalFunction(functionStatus []types.FunctionStatus, externalClients []*sdk.Client) ([]types.FunctionStatus, error) {
+func includeExternalFunction(functionStatus []types.FunctionStatus, faasP2PMappingList []catalog.FaasP2PMapping) ([]types.FunctionStatus, error) {
 
 	functionnameSet := make(map[string]struct{})
 	for _, fn := range functionStatus {
 		functionnameSet[fn.Name] = struct{}{}
 	}
 
-	for _, client := range externalClients {
-		fns, err := client.GetFunctions(context.Background(), "openfaas-fn")
+	for _, faasP2PMapping := range faasP2PMappingList {
+		fns, err := faasP2PMapping.FaasClient.GetFunctions(context.Background(), "openfaas-fn")
 		if err != nil {
-			log.Printf("[Read] error listing functions. Error: %s\n", err)
+			log.Printf("[Read] error listing external functions. Error: %s\n", err)
 			return nil, err
 		}
 		for _, fn := range fns {

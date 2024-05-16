@@ -16,7 +16,8 @@ import (
 )
 
 const DiscoveryServiceTag = "faasd-localcluster"
-const pubKeyPeerPath = "/tmp/faasd-p2p/pubKey-peer/"
+const pubKeyPeerPath = "/opt/p2p/pubKey-peer/"
+const mode = "static" //or mdns
 
 // discoveryNotifee gets notified when we find a new peer via mDNS discovery
 type discoveryNotifee struct {
@@ -24,8 +25,6 @@ type discoveryNotifee struct {
 	ps *pubsub.PubSub
 	c  Catalog
 }
-
-const mode = "static" //or mdns
 
 func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	// setup mDNS discovery to find local peers
@@ -63,6 +62,15 @@ func staticDiscovery(n *discoveryNotifee) error {
 	}
 	return nil
 }
+func extractIP4fromMultiaddr(maddr ma.Multiaddr) string {
+	val, err := maddr.ValueForProtocol(ma.P_IP4)
+	if err != nil {
+		log.Printf("Cannot extract IP address: %s", err)
+		return ""
+	}
+
+	return val
+}
 
 func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	log.Printf("Discovered new peer %s\n", pi.ID)
@@ -75,8 +83,10 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	infoRoomName := pi.ID.String()
 	// init the catagory for the find peer
 	n.c[infoRoomName] = &Node{
-		NodeInfo:     NodeInfo{},
-		NodeMetadata: NodeMetadata{},
+		NodeInfo: NodeInfo{},
+		NodeMetadata: NodeMetadata{
+			Ip: extractIP4fromMultiaddr(pi.Addrs[0]),
+		},
 		// do need info chan for the external peer
 		infoChan: nil,
 	}
