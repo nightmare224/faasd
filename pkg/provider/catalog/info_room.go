@@ -67,6 +67,7 @@ func subscribeInfoRoom(ctx context.Context, ps *pubsub.PubSub, infoRoomName stri
 func (ir *InfoRoom) publishLoop() {
 	for {
 		info := <-ir.infoChan
+		// log.Println("Receive from channel:", info)
 		infoBytes, err := json.Marshal(info)
 		if err != nil {
 			log.Printf("serialized info message error: %s\n", err)
@@ -84,8 +85,6 @@ func (ir *InfoRoom) subscribeLoop(node *Node) {
 	for {
 		msg, err := ir.sub.Next(ir.ctx)
 		if err != nil {
-			// close(ir.Messages)
-			// return
 			log.Printf("receive info message error: %s\n", err)
 			continue
 		}

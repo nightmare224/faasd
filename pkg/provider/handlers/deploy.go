@@ -83,8 +83,43 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 			http.Error(w, deployErr.Error(), http.StatusBadRequest)
 			return
 		}
-
-		defer catalog.AddAvailableFunctions(name, c)
+		go func() {
+			// timeout 60 second
+			const (
+				timeout = 60
+				step    = 5
+			)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
+			defer cancel()
+			ticker := time.NewTicker(step * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					log.Printf("error getting function %s status, error: %s\n", name, err)
+					return
+				case <-ticker.C:
+					f, err := GetFunction(client, name, namespace)
+					if err == nil {
+						fs := types.FunctionStatus{
+							Name:              f.name,
+							Image:             f.image,
+							AvailableReplicas: uint64(f.replicas),
+							Replicas:          uint64(f.replicas),
+							Namespace:         f.namespace,
+							Labels:            &f.labels,
+							Annotations:       &f.annotations,
+							Secrets:           f.secrets,
+							EnvVars:           f.envVars,
+							EnvProcess:        f.envProcess,
+							CreatedAt:         f.createdAt,
+						}
+						catalog.AddAvailableFunctions(fs, c)
+						return
+					}
+				}
+			}
+		}()
 	}
 }
 

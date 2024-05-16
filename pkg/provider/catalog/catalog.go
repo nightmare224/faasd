@@ -1,11 +1,15 @@
 package catalog
 
+import (
+	"github.com/openfaas/faas-provider/types"
+)
+
 // own itself use this key, other will use the p2p id as key
 var selfCatagoryKey string = "0"
 
 type NodeInfo struct {
-	AvailableFunctions []string `json:"availableFunctions"`
-	Overload           bool     `json:"overload"`
+	AvailableFunctions []types.FunctionStatus `json:"availableFunctions"`
+	Overload           bool                   `json:"overload"`
 }
 
 // key is the peer ID in string
@@ -26,13 +30,13 @@ type Node struct {
 	infoChan chan *NodeInfo
 }
 
-func AddAvailableFunctions(functionName string, c Catalog) {
+func AddAvailableFunctions(functionStatus types.FunctionStatus, c Catalog) {
 	for _, fn := range c[selfCatagoryKey].AvailableFunctions {
-		if functionName == fn {
+		if functionStatus.Name == fn.Name {
 			return
 		}
 	}
-	functionSet := append(c[selfCatagoryKey].AvailableFunctions, functionName)
+	functionSet := append(c[selfCatagoryKey].AvailableFunctions, functionStatus)
 	c[selfCatagoryKey].AvailableFunctions = functionSet
 
 	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
