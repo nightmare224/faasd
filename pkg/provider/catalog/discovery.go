@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -21,30 +22,32 @@ const pubKeyPeerPath = "/opt/p2p/pubKey-peer/"
 const mode = "static" //or mdns
 
 // discoveryNotifee gets notified when we find a new peer via mDNS discovery
-type discoveryNotifee struct {
+type faasNotifiee struct {
 	h  host.Host
 	ps *pubsub.PubSub
 	c  Catalog
 }
 
-type faasNotifiee struct {
-	h host.Host
-}
+// type faasNotifiee struct {
+// 	h host.Host
+// 	c Catalog
+// }
 
 func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	// setup mDNS discovery to find local peers
 	switch mode {
 	case "static":
-		h.Network().Notify(&faasNotifiee{h: h})
-		return staticDiscovery(&discoveryNotifee{h: h, ps: ps, c: c})
+		notifee := &faasNotifiee{h: h, ps: ps, c: c}
+		h.Network().Notify(notifee)
+		return staticDiscovery(notifee)
 	case "mdns":
-		s := mdns.NewMdnsService(h, DiscoveryServiceTag, &discoveryNotifee{h: h, ps: ps, c: c})
+		s := mdns.NewMdnsService(h, DiscoveryServiceTag, &faasNotifiee{h: h, ps: ps, c: c})
 		return s.Start()
 	default:
 		return fmt.Errorf("discover peer mode %s not found", mode)
 	}
 }
-func staticDiscovery(n *discoveryNotifee) error {
+func staticDiscovery(n *faasNotifiee) error {
 	// return nil
 	dir, _ := os.ReadDir(pubKeyPeerPath)
 	for _, entry := range dir {
@@ -79,15 +82,11 @@ func extractIP4fromMultiaddr(maddr ma.Multiaddr) string {
 	return val
 }
 
-func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
+func (n *faasNotifiee) HandlePeerFound(pi peer.AddrInfo) {
 	log.Printf("Discovered new peer %s\n", pi.ID)
-	ctx := context.Background()
-	err := n.h.Connect(ctx, pi)
-	if err != nil {
-		err := fmt.Errorf("error connecting to peer %s", err)
-		log.Fatal(err)
-	}
 	infoRoomName := pi.ID.String()
+	// create the instance in catalog and then connect,
+	// to prevent the connect function call this function again
 	// init the catagory for the find peer
 	n.c[infoRoomName] = &Node{
 		NodeInfo: NodeInfo{},
@@ -97,9 +96,16 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 		// do need info chan for the external peer
 		infoChan: nil,
 	}
+	ctx := context.Background()
+	err := n.h.Connect(ctx, pi)
+	if err != nil {
+		err := fmt.Errorf("error connecting to peer %s", err)
+		log.Fatal(err)
+	}
+
 	_, subErr := subscribeInfoRoom(ctx, n.ps, infoRoomName, n.h.ID(), n.c)
 	if subErr != nil {
-		err := fmt.Errorf("error subcribe to info room: %s", err)
+		err := fmt.Errorf("error subcribe to info room: %s", subErr)
 		log.Fatal(err)
 	}
 
@@ -141,19 +147,34 @@ func (n *faasNotifiee) ListenClose(network network.Network, maddr ma.Multiaddr) 
 func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
 	// fmt.Println("Peer store:", n.h.Peerstore().Peers())
 	// if do not do it concurrently, the peers will block to try new stream at the same time
+	remotePeer := conn.RemotePeer()
+	fmt.Printf("New Peer Join: %s\n", remotePeer)
+	// if the is new peer than do the handler peer found first
+	if _, exist := n.c[remotePeer.String()]; !exist {
+		pi := peer.AddrInfo{
+			ID:    remotePeer,
+			Addrs: []ma.Multiaddr{conn.RemoteMultiaddr()},
+		}
+		n.HandlePeerFound(pi)
+	}
 	go func() {
-		fmt.Printf("New Peer Join: %s\n", conn.RemotePeer())
-		stream, err := n.h.NewStream(context.Background(), conn.RemotePeer(), faasProtocolID)
+		stream, err := n.h.NewStream(context.Background(), remotePeer, faasProtocolID)
 		if err != nil {
 			log.Fatalf("Failed to open stream: %v", err)
 			return
 		}
 		defer stream.Close()
 		// TODO: Send Inital avaialable function
-		message := "Hello, specific peer!"
-		_, err = stream.Write([]byte(message))
+		info := n.c[selfCatagoryKey].NodeInfo
+		infoBytes, err := json.Marshal(info)
+		if err != nil {
+			log.Printf("serialized info message error: %s\n", err)
+			return
+		}
+		_, err = stream.Write([]byte(infoBytes))
 		if err != nil {
 			log.Fatalf("Failed to send message: %v", err)
+			return
 		}
 		fmt.Println("Message sent to specific peer")
 	}()

@@ -223,17 +223,14 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	// infoLevel := catalog.ClusterLevel
 	// create the catalog to store p
 	c := make(catalog.Catalog)
+	initSelfCatagory(c, client)
 	// create catalog
 	// infoChan, err := catalog.InitInfoNetwork(c)
 	_, InitNetworkErr := catalog.InitInfoNetwork(c)
 	if InitNetworkErr != nil {
 		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
 	}
-	// init available function to catalog
-	// fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
-	// if err != nil {
-	// 	return fmt.Errorf("cannot init available function: %s", err)
-	// }
+
 	// c.InitAvailableFunctions(fns)
 
 	var externalClients []*sdk.Client
@@ -279,6 +276,19 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	bootstrap.Serve(cmd.Context(), &bootstrapHandlers, config)
 	return nil
 
+}
+func initSelfCatagory(c catalog.Catalog, client *containerd.Client) {
+	// init available function to catalog
+	fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
+	if err != nil {
+		fmt.Printf("cannot init available function: %s", err)
+		return
+	}
+	c[c.GetSelfCatalogKey()] = &catalog.Node{
+		NodeInfo: catalog.NodeInfo{
+			AvailableFunctions: fns,
+		},
+	}
 }
 
 /*

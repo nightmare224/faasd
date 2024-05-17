@@ -14,7 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
-const ip = "10.211.55.24"
+const ip = "10.211.55.27"
 const port = "8282"
 
 // const pubKeySelf = "/tmp/faasd-p2p/pubKey"
@@ -28,7 +28,7 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 
 	// create the stream for initialization
 	host.SetStreamHandler(faasProtocolID, func(stream network.Stream) {
-		c.initAvailableFunctions(stream)
+		c.streamAvailableFunctions(stream)
 	})
 
 	// discovery the other host and join their room
@@ -43,13 +43,21 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 		return nil, err
 	}
 	// the info of itself
-	c[selfCatagoryKey] = &Node{
-		NodeInfo: NodeInfo{},
-		NodeMetadata: NodeMetadata{
+	if _, exist := c[selfCatagoryKey]; exist {
+		c[selfCatagoryKey].NodeMetadata = NodeMetadata{
 			Ip: extractIP4fromMultiaddr(host.Addrs()[0]),
-		},
-		infoChan: ir.infoChan,
+		}
+		c[selfCatagoryKey].infoChan = ir.infoChan
+	} else {
+		return nil, fmt.Errorf("the self catalog should be initialize beforehand")
 	}
+	// c[selfCatagoryKey] = &Node{
+	// 	NodeInfo: NodeInfo{},
+	// 	NodeMetadata: NodeMetadata{
+	// 		Ip: extractIP4fromMultiaddr(host.Addrs()[0]),
+	// 	},
+	// 	infoChan: ir.infoChan,
+	// }
 
 	return ir.infoChan, nil
 }
