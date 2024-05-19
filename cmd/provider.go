@@ -233,14 +233,14 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	// c.InitAvailableFunctions(fns)
 
-	var externalClients []*sdk.Client
+	// var externalClients []*sdk.Client
 	// externalClients, err := connectExternalProvider()
 	// if err != nil {
 	// 	return fmt.Errorf("cannot connect external provider: %s", err)
 	// }
 	// var exteranlFaaSClients []FaaSClient
 
-	// faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
+	faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 
 	invokeResolver := handlers.NewInvokeResolver(client)
 
@@ -256,7 +256,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	bootstrapHandlers := types.FaaSHandlers{
 		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
-		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, externalClients, c),
+		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, faasP2PMappingList, c),
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni),
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),

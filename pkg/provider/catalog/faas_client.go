@@ -30,6 +30,16 @@ type FaasConfig struct {
 	Password string `json:"password"`
 }
 
+func (mapping FaasP2PMapping) Resolve(name string) (url.URL, error) {
+	// mapping.FaasClient.GatewayURL
+	// functionAddr := url.URL{
+	// 	Scheme: "http",
+	// 	Host:   fmt.Sprintf("%s:%s", config.Ip, config.Port),
+	// }
+
+	return *mapping.FaasClient.GatewayURL, nil
+}
+
 func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
 
 	faasClients := newFaasClients(c[selfCatagoryKey].Ip)
@@ -48,6 +58,12 @@ func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
 
 		// testFaasClient(client)
 	}
+	// also add itself into it
+	mapping := FaasP2PMapping{
+		FaasClient: nil,
+		P2PID:      selfCatagoryKey,
+	}
+	faasP2PMappingList = append(faasP2PMappingList, mapping)
 	// log.Println(faasP2PMappingList)
 	return faasP2PMappingList
 }
