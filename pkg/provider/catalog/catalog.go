@@ -87,6 +87,11 @@ func (c Catalog) ListAvailableFunctions(infoLevel InfoLevel) []types.FunctionSta
 	return functionStatus
 }
 
+func (c Catalog) UpdatePressure(overload bool) {
+	c[selfCatagoryKey].Overload = overload
+	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
+}
+
 // the handler of
 func (c Catalog) streamAvailableFunctions(stream network.Stream) {
 	defer stream.Close()

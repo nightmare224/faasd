@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openfaas/faasd/pkg"
+	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -30,7 +31,7 @@ type CustomHealth struct {
 }
 
 // MakeHealthHandler returns 200/OK when healthy
-func MakeHealthHandler(localResolver pkg.Resolver) http.HandlerFunc {
+func MakeHealthHandler(localResolver pkg.Resolver, c catalog.Catalog) http.HandlerFunc {
 	got := make(chan string, 1)
 	go localResolver.Get("prometheus", got, time.Second*5)
 	ipAddress := <-got
@@ -39,7 +40,7 @@ func MakeHealthHandler(localResolver pkg.Resolver) http.HandlerFunc {
 		Address: fmt.Sprintf("http://%s:9090", ipAddress),
 	})
 	promAPIClient := v1.NewAPI(promClient)
-	checkOverload := MeasurePressure(promAPIClient)
+	checkOverload := MeasurePressure(promAPIClient, c)
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		overload_showed := r.URL.Query().Get("overload")
@@ -92,7 +93,7 @@ func MakeHealthHandler(localResolver pkg.Resolver) http.HandlerFunc {
 // }
 
 // add the overloaded infomation in it
-func MeasurePressure(client v1.API) func() bool {
+func MeasurePressure(client v1.API, c catalog.Catalog) func() bool {
 	// use closure to store the value
 	overload := false
 	go func() {
@@ -107,7 +108,7 @@ func MeasurePressure(client v1.API) func() bool {
 				log.Fatalf("CPU usage unavailable from Prometheus: %v", err)
 				break
 			}
-			overload = overload || (CPULoad > CPUOverloadThreshold)
+			overload_update := (CPULoad > CPUOverloadThreshold)
 			// memory
 			// memQuery := "1 - avg_over_time(node_memory_MemAvailable_bytes[1m])/node_memory_MemTotal_bytes"
 			memQuery := "1 - ((avg_over_time(node_memory_MemFree_bytes[1m]) + avg_over_time(node_memory_Cached_bytes[1m]) + avg_over_time(node_memory_Buffers_bytes[1m])) / node_memory_MemTotal_bytes)"
@@ -116,8 +117,14 @@ func MeasurePressure(client v1.API) func() bool {
 				log.Fatalf("memory usage unavailable from Prometheus: %v", err)
 				break
 			}
-			overload = overload || (MemLoad > MemOverloadThreshold)
+			overload_update = overload_update || (MemLoad > MemOverloadThreshold)
 			time.Sleep(time.Second * 10)
+			// fmt.Println("The update overload: ", overload_update)
+			// update
+			if overload_update != overload {
+				overload = overload_update
+				c.UpdatePressure(overload)
+			}
 		}
 		// bad exit
 		os.Exit(1)

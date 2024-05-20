@@ -83,6 +83,8 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 			http.Error(w, deployErr.Error(), http.StatusBadRequest)
 			return
 		}
+
+		// update the catalog until the function is ready
 		go func() {
 			// timeout 60 second
 			const (

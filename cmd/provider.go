@@ -264,7 +264,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},
-		Health:          handlers.MakeHealthHandler(localResolver),
+		Health:          handlers.MakeHealthHandler(localResolver, c),
 		Info:            handlers.MakeInfoHandler(Version, GitCommit),
 		ListNamespaces:  handlers.MakeNamespacesLister(client),
 		Secrets:         handlers.MakeSecretHandler(client.NamespaceService(), baseUserSecretsPath),
