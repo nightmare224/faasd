@@ -2,13 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"github.com/containerd/containerd"
-	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func MakeReadHandler(client *containerd.Client, c catalog.Catalog) func(w http.ResponseWriter, r *http.Request) {
@@ -77,43 +74,6 @@ func MakeReadHandler(client *containerd.Client, c catalog.Catalog) func(w http.R
 		w.WriteHeader(http.StatusOK)
 		w.Write(body)
 	}
-}
-
-func ListFunctionStatus(client *containerd.Client, lookupNamespace string) ([]types.FunctionStatus, error) {
-	res := []types.FunctionStatus{}
-	fns, err := ListFunctions(client, lookupNamespace)
-	if err != nil {
-		log.Printf("error listing functions. Error: %s\n", err)
-		return []types.FunctionStatus{}, err
-	}
-
-	for _, fn := range fns {
-		annotations := &fn.annotations
-		labels := &fn.labels
-		memory := resource.NewQuantity(fn.memoryLimit, resource.BinarySI)
-		status := types.FunctionStatus{
-			Name:        fn.name,
-			Image:       fn.image,
-			Replicas:    uint64(fn.replicas),
-			Namespace:   fn.namespace,
-			Labels:      labels,
-			Annotations: annotations,
-			Secrets:     fn.secrets,
-			EnvVars:     fn.envVars,
-			EnvProcess:  fn.envProcess,
-			CreatedAt:   fn.createdAt,
-		}
-
-		// Do not remove below memory check for 0
-		// Memory limit should not be included in status until set explicitly
-		limit := &types.FunctionResources{Memory: memory.String()}
-		if limit.Memory != "0" {
-			status.Limits = limit
-		}
-
-		res = append(res, status)
-	}
-	return res, nil
 }
 
 // func includeExternalFunction(functionStatus []types.FunctionStatus, faasP2PMappingList []catalog.FaasP2PMapping) ([]types.FunctionStatus, error) {

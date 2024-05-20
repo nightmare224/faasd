@@ -260,7 +260,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni),
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),
-		FunctionStatus: handlers.MakeReplicaReaderHandler(client),
+		FunctionStatus: handlers.MakeReplicaReaderHandler(client, c),
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},

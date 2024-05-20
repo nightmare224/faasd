@@ -12,6 +12,7 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg"
 	faasd "github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/cninetwork"
@@ -65,6 +66,34 @@ func ListFunctions(client *containerd.Client, namespace string) (map[string]*Fun
 	}
 
 	return functions, nil
+}
+
+func ListFunctionStatus(client *containerd.Client, namespace string) ([]types.FunctionStatus, error) {
+	res := []types.FunctionStatus{}
+	fns, err := ListFunctions(client, namespace)
+	if err != nil {
+		log.Printf("error listing functions. Error: %s\n", err)
+		return []types.FunctionStatus{}, err
+	}
+
+	for _, fn := range fns {
+		status := types.FunctionStatus{
+			Name:              fn.name,
+			Image:             fn.image,
+			AvailableReplicas: uint64(fn.replicas),
+			Replicas:          uint64(fn.replicas),
+			Namespace:         fn.namespace,
+			Labels:            &fn.labels,
+			Annotations:       &fn.annotations,
+			Secrets:           fn.secrets,
+			EnvVars:           fn.envVars,
+			EnvProcess:        fn.envProcess,
+			CreatedAt:         fn.createdAt,
+		}
+
+		res = append(res, status)
+	}
+	return res, nil
 }
 
 // GetFunction returns a function that matches name
