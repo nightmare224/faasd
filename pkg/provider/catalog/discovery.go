@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/openfaas/faas-provider/types"
 )
 
 const DiscoveryServiceTag = "faasd-localcluster"
@@ -48,7 +49,7 @@ func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	}
 }
 func staticDiscovery(n *faasNotifiee) error {
-	// return nil
+	port := types.ParseString(os.Getenv("FAAS_P2P_PORT"), "8282")
 	dir, _ := os.ReadDir(pubKeyPeerPath)
 	for _, entry := range dir {
 		// filename is ip

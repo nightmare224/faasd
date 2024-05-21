@@ -12,10 +12,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/openfaas/faas-provider/types"
 )
-
-const ip = "10.211.55.27"
-const port = "8282"
 
 // const pubKeySelf = "/tmp/faasd-p2p/pubKey"
 const privKeySelf = "/opt/p2p/privKey"
@@ -74,7 +72,7 @@ func newLibp2pHost() host.Host {
 		log.Printf("Failed to extract key from message key data: %s", err)
 		panic(err)
 	}
-	multiaddr := fmt.Sprintf("/ip4/%s/udp/%s/quic-v1", ip, port)
+	multiaddr := getMultiaddr()
 	host, err := libp2p.New(
 		libp2p.ListenAddrStrings(multiaddr),
 		libp2p.Identity(privKey),
@@ -83,9 +81,17 @@ func newLibp2pHost() host.Host {
 		log.Printf("Failed to create new host: %s", err)
 		panic(err)
 	}
-	log.Printf("Created new p2p host %s\n", host.ID().String())
+	log.Printf("Created new p2p host %s (%s)\n", host.ID().String(), multiaddr)
 
 	return host
+}
+func getMultiaddr() string {
+	// ip, port := os.Getenv("FAAS_P2P_IP"), os.Getenv("FAAS_P2P_PORT")
+	ip := types.ParseString(os.Getenv("FAAS_P2P_IP"), "0.0.0.0")
+	port := types.ParseString(os.Getenv("FAAS_P2P_PORT"), "8282")
+	multiaddr := fmt.Sprintf("/ip4/%s/udp/%s/quic-v1", ip, port)
+
+	return multiaddr
 }
 
 // create a new PubSub service using the GossipSub router
