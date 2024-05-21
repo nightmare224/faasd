@@ -15,10 +15,11 @@ import (
 	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg"
 	cninetwork "github.com/openfaas/faasd/pkg/cninetwork"
+	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/service"
 )
 
-func MakeDeleteHandler(client *containerd.Client, cni gocni.CNI) func(w http.ResponseWriter, r *http.Request) {
+func MakeDeleteHandler(client *containerd.Client, cni gocni.CNI, c catalog.Catalog) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -84,7 +85,7 @@ func MakeDeleteHandler(client *containerd.Client, cni gocni.CNI) func(w http.Res
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
+		c.DeleteAvailableFunctions(name)
 		log.Printf("[Delete] deleted %s\n", name)
 	}
 }

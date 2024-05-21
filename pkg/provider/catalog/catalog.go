@@ -60,6 +60,16 @@ func (c Catalog) AddAvailableFunctions(functionStatus types.FunctionStatus) {
 	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
 }
 
+func (c Catalog) DeleteAvailableFunctions(functionName string) {
+	for i, fn := range c[selfCatagoryKey].AvailableFunctions {
+		if functionName == fn.Name {
+			c[selfCatagoryKey].AvailableFunctions = append(c[selfCatagoryKey].AvailableFunctions[:i], c[selfCatagoryKey].AvailableFunctions[i+1:]...)
+		}
+	}
+
+	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
+}
+
 func (c Catalog) ListAvailableFunctions(infoLevel InfoLevel) []types.FunctionStatus {
 	var functionStatus []types.FunctionStatus
 	functionnameSet := make(map[string]struct{})
