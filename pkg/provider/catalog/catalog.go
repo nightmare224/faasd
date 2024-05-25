@@ -21,6 +21,8 @@ const (
 	ClusterLevel
 )
 
+const infoUpdateIntervalSec = 10
+
 type NodeInfo struct {
 	AvailableFunctions []types.FunctionStatus `json:"availableFunctions"`
 	Overload           bool                   `json:"overload"`
@@ -46,28 +48,6 @@ type Node struct {
 
 func (c Catalog) GetSelfCatalogKey() string {
 	return selfCatagoryKey
-}
-
-func (c Catalog) AddAvailableFunctions(functionStatus types.FunctionStatus) {
-	for _, fn := range c[selfCatagoryKey].AvailableFunctions {
-		if functionStatus.Name == fn.Name {
-			return
-		}
-	}
-	functionSet := append(c[selfCatagoryKey].AvailableFunctions, functionStatus)
-	c[selfCatagoryKey].AvailableFunctions = functionSet
-
-	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
-}
-
-func (c Catalog) DeleteAvailableFunctions(functionName string) {
-	for i, fn := range c[selfCatagoryKey].AvailableFunctions {
-		if functionName == fn.Name {
-			c[selfCatagoryKey].AvailableFunctions = append(c[selfCatagoryKey].AvailableFunctions[:i], c[selfCatagoryKey].AvailableFunctions[i+1:]...)
-		}
-	}
-
-	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
 }
 
 func (c Catalog) ListAvailableFunctions(infoLevel InfoLevel) []types.FunctionStatus {
@@ -97,9 +77,18 @@ func (c Catalog) ListAvailableFunctions(infoLevel InfoLevel) []types.FunctionSta
 	return functionStatus
 }
 
-func (c Catalog) UpdatePressure(overload bool) {
-	c[selfCatagoryKey].Overload = overload
-	publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
+// available replicas means the replicas on current node, replicas means the replicas
+// in the entire p2p network
+func (c Catalog) CountReplicas(functionName string) int {
+	replicas := 0
+	for _, node := range c {
+		for _, fn := range node.AvailableFunctions {
+			if functionName == fn.Name {
+				replicas += int(fn.AvailableReplicas)
+			}
+		}
+	}
+	return replicas
 }
 
 // the handler of
@@ -138,7 +127,3 @@ func (c Catalog) streamAvailableFunctions(stream network.Stream) {
 
 // publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
 // }
-
-func publishInfo(infoChan chan *NodeInfo, info *NodeInfo) {
-	infoChan <- info
-}

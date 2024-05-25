@@ -16,6 +16,9 @@ import (
 	"github.com/openfaas/faasd/pkg"
 )
 
+// MaxReplicas licensed for OpenFaaS CE is 5/5
+const MaxReplicas = 5
+
 func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -98,16 +101,21 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI) func(w h
 		createNewTask := false
 
 		// Scale to zero
+		// if req.Replicas == 0 {
+		// 	// If a task is running, pause it
+		// 	if taskExists && taskStatus.Status == containerd.Running {
+		// 		if pauseErr := task.Pause(ctx); pauseErr != nil {
+		// 			wrappedPauseErr := fmt.Errorf("error pausing task %s, error: %s", name, pauseErr)
+		// 			log.Printf("[Scale] %s\n", wrappedPauseErr.Error())
+		// 			http.Error(w, wrappedPauseErr.Error(), http.StatusNotFound)
+		// 			return
+		// 		}
+		// 	}
+		// }
 		if req.Replicas == 0 {
-			// If a task is running, pause it
-			if taskExists && taskStatus.Status == containerd.Running {
-				if pauseErr := task.Pause(ctx); pauseErr != nil {
-					wrappedPauseErr := fmt.Errorf("error pausing task %s, error: %s", name, pauseErr)
-					log.Printf("[Scale] %s\n", wrappedPauseErr.Error())
-					http.Error(w, wrappedPauseErr.Error(), http.StatusNotFound)
-					return
-				}
-			}
+			http.Error(w, "replicas cannot be set to 0 (currently disabled)",
+				http.StatusBadRequest)
+			return
 		}
 
 		if taskExists {
@@ -140,5 +148,15 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI) func(w h
 				return
 			}
 		}
+
+		// scale up
+		// replicas := int32(req.Replicas)
+		// if req.Replicas >= MaxReplicas {
+		// 	replicas = MaxReplicas
+		// }
 	}
+}
+
+func scaleUp(functionName string, functionReplicas int) {
+
 }

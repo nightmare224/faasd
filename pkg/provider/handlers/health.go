@@ -31,7 +31,7 @@ type CustomHealth struct {
 }
 
 // MakeHealthHandler returns 200/OK when healthy
-func MakeHealthHandler(localResolver pkg.Resolver, c catalog.Catalog) http.HandlerFunc {
+func MakeHealthHandler(localResolver pkg.Resolver, node *catalog.Node) http.HandlerFunc {
 	got := make(chan string, 1)
 	go localResolver.Get("prometheus", got, time.Second*5)
 	ipAddress := <-got
@@ -40,7 +40,7 @@ func MakeHealthHandler(localResolver pkg.Resolver, c catalog.Catalog) http.Handl
 		Address: fmt.Sprintf("http://%s:9090", ipAddress),
 	})
 	promAPIClient := v1.NewAPI(promClient)
-	checkOverload := MeasurePressure(promAPIClient, c)
+	checkOverload := MeasurePressure(promAPIClient, node)
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		overload_showed := r.URL.Query().Get("overload")
@@ -93,7 +93,7 @@ func MakeHealthHandler(localResolver pkg.Resolver, c catalog.Catalog) http.Handl
 // }
 
 // add the overloaded infomation in it
-func MeasurePressure(client v1.API, c catalog.Catalog) func() bool {
+func MeasurePressure(client v1.API, node *catalog.Node) func() bool {
 	// use closure to store the value
 	overload := false
 	go func() {
@@ -123,7 +123,7 @@ func MeasurePressure(client v1.API, c catalog.Catalog) func() bool {
 			// update
 			if overload_update != overload {
 				overload = overload_update
-				c.UpdatePressure(overload)
+				node.UpdatePressure(overload)
 			}
 		}
 		// bad exit

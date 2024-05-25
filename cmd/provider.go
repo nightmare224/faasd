@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -16,7 +13,6 @@ import (
 
 	"github.com/containerd/containerd"
 	bootstrap "github.com/openfaas/faas-provider"
-	"github.com/openfaas/faas-provider/auth"
 	"github.com/openfaas/faas-provider/logs"
 	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg"
@@ -51,69 +47,69 @@ func makeProviderCmd() *cobra.Command {
 	return command
 }
 
-func connectExternalProvider() ([]*sdk.Client, error) {
-	externalSecretMountPath := path.Join(faasdwd, "secrets/external")
-	if err := ensureWorkingDir(externalSecretMountPath); err != nil {
-		return nil, err
-	}
+// func connectExternalProvider() ([]*sdk.Client, error) {
+// 	externalSecretMountPath := path.Join(faasdwd, "secrets/external")
+// 	if err := ensureWorkingDir(externalSecretMountPath); err != nil {
+// 		return nil, err
+// 	}
 
-	var clients []*sdk.Client = nil
-	files, _ := os.ReadDir(externalSecretMountPath)
-	hostsfile, err := os.OpenFile("/etc/hosts", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
-	defer hostsfile.Close()
-	for _, file := range files {
-		if !file.IsDir() {
-			continue
-		}
-		secretPath := path.Join(externalSecretMountPath, file.Name())
-		reader := auth.ReadBasicAuthFromDisk{
-			SecretMountPath: secretPath,
-		}
-		credentials, err := reader.Read()
-		if err != nil {
-			log.Fatal(err)
-			continue
-		}
-		data, hostErr := os.ReadFile(path.Join(secretPath, "basic-auth-host"))
-		hostinfo := ExternalHostInfo{}
-		if hostErr != nil {
-			err := fmt.Errorf("unable to load %s", hostErr)
-			log.Fatal(err)
-			continue
-		}
-		json.Unmarshal(data, &hostinfo)
-		hosturl := fmt.Sprintf("http://%s:%s", hostinfo.Ip, hostinfo.Port)
-		if hostinfo.Hostname != "" {
-			_, err := hostsfile.WriteString(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname))
-			if err != nil {
-				err := fmt.Errorf("cannot write hosts file: %s", err)
-				log.Fatal(err)
-				continue
-			}
-			hosturl = fmt.Sprintf("http://%s:%s", hostinfo.Hostname, hostinfo.Port)
-		}
-		// writeHostsErr := os.WriteFile("/etc/hosts", []byte(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname)), 0x0644)
+// 	var clients []*sdk.Client = nil
+// 	files, _ := os.ReadDir(externalSecretMountPath)
+// 	hostsfile, err := os.OpenFile("/etc/hosts", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 		return nil, err
+// 	}
+// 	defer hostsfile.Close()
+// 	for _, file := range files {
+// 		if !file.IsDir() {
+// 			continue
+// 		}
+// 		secretPath := path.Join(externalSecretMountPath, file.Name())
+// 		reader := auth.ReadBasicAuthFromDisk{
+// 			SecretMountPath: secretPath,
+// 		}
+// 		credentials, err := reader.Read()
+// 		if err != nil {
+// 			log.Fatal(err)
+// 			continue
+// 		}
+// 		data, hostErr := os.ReadFile(path.Join(secretPath, "basic-auth-host"))
+// 		hostinfo := ExternalHostInfo{}
+// 		if hostErr != nil {
+// 			err := fmt.Errorf("unable to load %s", hostErr)
+// 			log.Fatal(err)
+// 			continue
+// 		}
+// 		json.Unmarshal(data, &hostinfo)
+// 		hosturl := fmt.Sprintf("http://%s:%s", hostinfo.Ip, hostinfo.Port)
+// 		if hostinfo.Hostname != "" {
+// 			_, err := hostsfile.WriteString(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname))
+// 			if err != nil {
+// 				err := fmt.Errorf("cannot write hosts file: %s", err)
+// 				log.Fatal(err)
+// 				continue
+// 			}
+// 			hosturl = fmt.Sprintf("http://%s:%s", hostinfo.Hostname, hostinfo.Port)
+// 		}
+// 		// writeHostsErr := os.WriteFile("/etc/hosts", []byte(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname)), 0x0644)
 
-		gatewayURL, _ := url.Parse(hosturl)
-		auth := &sdk.BasicAuth{
-			Username: credentials.User,
-			Password: credentials.Password,
-		}
-		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
-		clients = append(clients, client)
-		log.Printf("Connect with the external client: %s\n", hosturl)
-	}
-	if clients != nil {
-		// clients = measureRTT(clients)
-		rankClientsByRTT(clients)
-	}
+// 		gatewayURL, _ := url.Parse(hosturl)
+// 		auth := &sdk.BasicAuth{
+// 			Username: credentials.User,
+// 			Password: credentials.Password,
+// 		}
+// 		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
+// 		clients = append(clients, client)
+// 		log.Printf("Connect with the external client: %s\n", hosturl)
+// 	}
+// 	if clients != nil {
+// 		// clients = measureRTT(clients)
+// 		rankClientsByRTT(clients)
+// 	}
 
-	return clients, nil
-}
+// 	return clients, nil
+// }
 
 // put it from the fastest client to slowest client
 func rankClientsByRTT(clients []*sdk.Client) {
@@ -223,7 +219,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	// infoLevel := catalog.ClusterLevel
 	// create the catalog to store p
 	c := make(catalog.Catalog)
-	initSelfCatagory(c, client)
+	node := initSelfCatagory(c, client)
 	// create catalog
 	// infoChan, err := catalog.InitInfoNetwork(c)
 	_, InitNetworkErr := catalog.InitInfoNetwork(c)
@@ -257,14 +253,14 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	bootstrapHandlers := types.FaaSHandlers{
 		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
 		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, faasP2PMappingList, c),
-		DeleteFunction: handlers.MakeDeleteHandler(client, cni, c),
-		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
+		DeleteFunction: handlers.MakeDeleteHandler(client, cni, node),
+		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, node),
 		FunctionLister: handlers.MakeReadHandler(client, c),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client, c),
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},
-		Health:          handlers.MakeHealthHandler(localResolver, c),
+		Health:          handlers.MakeHealthHandler(localResolver, node),
 		Info:            handlers.MakeInfoHandler(Version, GitCommit),
 		ListNamespaces:  handlers.MakeNamespacesLister(client),
 		Secrets:         handlers.MakeSecretHandler(client.NamespaceService(), baseUserSecretsPath),
@@ -277,18 +273,19 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	return nil
 
 }
-func initSelfCatagory(c catalog.Catalog, client *containerd.Client) {
+func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Node {
 	// init available function to catalog
 	fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
 	if err != nil {
 		fmt.Printf("cannot init available function: %s", err)
-		return
+		return nil
 	}
 	c[c.GetSelfCatalogKey()] = &catalog.Node{
 		NodeInfo: catalog.NodeInfo{
 			AvailableFunctions: fns,
 		},
 	}
+	return c[c.GetSelfCatalogKey()]
 }
 
 /*
