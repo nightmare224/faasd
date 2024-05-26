@@ -54,7 +54,7 @@ func subscribeInfoRoom(ctx context.Context, ps *pubsub.PubSub, infoRoomName stri
 	}
 	// subcribe to room
 	if infoRoomName != selfID.String() {
-		go ir.subscribeLoop(c[infoRoomName])
+		go ir.subscribeLoop(c, infoRoomName)
 		log.Printf("Join info room: %s\n", infoRoomName)
 	} else { // create a room
 		// new the channel to publish the infomation
@@ -81,7 +81,7 @@ func (ir *InfoRoom) publishLoop() {
 	}
 
 }
-func (ir *InfoRoom) subscribeLoop(node *Node) {
+func (ir *InfoRoom) subscribeLoop(c Catalog, infoRoomName string) {
 	for {
 		msg, err := ir.sub.Next(ir.ctx)
 		if err != nil {
@@ -104,6 +104,11 @@ func (ir *InfoRoom) subscribeLoop(node *Node) {
 		fmt.Println("Receive info from publisher:", info)
 
 		// update the info in the node
-		node.NodeInfo = *info
+		c[infoRoomName].NodeInfo = *info
+		c.updatetReplicasWithNodeInfo(*info)
 	}
 }
+
+// func updateNodeInfo(info *NodeInfo, c Catalog) {
+
+// }

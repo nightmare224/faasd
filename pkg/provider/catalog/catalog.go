@@ -1,13 +1,6 @@
 package catalog
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/openfaas/faas-provider/types"
 )
 
@@ -22,6 +15,13 @@ const (
 )
 
 const infoUpdateIntervalSec = 10
+
+const (
+	// CPU average overload threshold within one minitues
+	CPUOverloadThreshold = 0.80
+	// Memory average overload threshold within one minitues
+	MemOverloadThreshold = 0.80
+)
 
 type NodeInfo struct {
 	AvailableFunctions []types.FunctionStatus `json:"availableFunctions"`
@@ -48,78 +48,6 @@ type Node struct {
 
 func (c Catalog) GetSelfCatalogKey() string {
 	return selfCatagoryKey
-}
-
-func (c Catalog) ListAvailableFunctions(infoLevel InfoLevel) []types.FunctionStatus {
-	var functionStatus []types.FunctionStatus
-	functionnameSet := make(map[string]struct{})
-	switch infoLevel {
-	case LocalLevel:
-		for _, fn := range c[selfCatagoryKey].AvailableFunctions {
-			if _, exist := functionnameSet[fn.Name]; !exist {
-				functionStatus = append(functionStatus, fn)
-				functionnameSet[fn.Name] = struct{}{}
-			}
-		}
-	case ClusterLevel:
-		for _, node := range c {
-			// if id == selfCatagoryKey {
-			// 	continue
-			// }
-			for _, fn := range node.AvailableFunctions {
-				if _, exist := functionnameSet[fn.Name]; !exist {
-					functionStatus = append(functionStatus, fn)
-					functionnameSet[fn.Name] = struct{}{}
-				}
-			}
-		}
-	}
-	return functionStatus
-}
-
-// available replicas means the replicas on current node, replicas means the replicas
-// in the entire p2p network
-func (c Catalog) CountReplicas(functionName string) int {
-	replicas := 0
-	for _, node := range c {
-		for _, fn := range node.AvailableFunctions {
-			if functionName == fn.Name {
-				replicas += int(fn.AvailableReplicas)
-			}
-		}
-	}
-	return replicas
-}
-
-// the handler of
-func (c Catalog) streamAvailableFunctions(stream network.Stream) {
-	defer stream.Close()
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, stream); err != nil {
-		log.Fatalf("Failed to read from stream: %v", err)
-		return
-	}
-	// TODO: receive the initialize available function
-	info := new(NodeInfo)
-	err := json.Unmarshal(buf.Bytes(), info)
-	if err != nil {
-		log.Printf("deserialized info message error: %s\n", err)
-		return
-	}
-	fmt.Println("Receive info from publisher stream:", info)
-
-	// update the info in the node
-	c[stream.Conn().RemotePeer().String()].NodeInfo = *info
-
-	// example
-	// buf := make([]byte, 256)
-	// n, err := stream.Read(buf)
-	// if err != nil && err != io.EOF {
-	// 	log.Fatalf("Failed to read from stream: %v", err)
-	// }
-
-	// message := string(buf[:n])
-	// fmt.Printf("Received direct message: %s\n", message)
 }
 
 // func (c Catalog) InitAvailableFunctions(fns []types.FunctionStatus) {

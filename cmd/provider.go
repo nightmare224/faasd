@@ -23,6 +23,9 @@ import (
 	"github.com/openfaas/faasd/pkg/provider/config"
 	"github.com/openfaas/faasd/pkg/provider/handlers"
 	"github.com/openfaas/go-sdk"
+	"github.com/prometheus/client_golang/api"
+	promapi "github.com/prometheus/client_golang/api"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/spf13/cobra"
 )
 
@@ -250,11 +253,15 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	localResolver := pkg.NewLocalResolver(path.Join(faasdwd, "hosts"))
 	go localResolver.Start()
 
+	// start the local update
+	promClient := initPromClient(localResolver)
+	go node.ListenUpdateInfo(client, &promClient)
+
 	bootstrapHandlers := types.FaaSHandlers{
 		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
 		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, faasP2PMappingList, c),
-		DeleteFunction: handlers.MakeDeleteHandler(client, cni, node),
-		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, node),
+		DeleteFunction: handlers.MakeDeleteHandler(client, cni, c),
+		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client, c),
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
@@ -286,6 +293,18 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 		},
 	}
 	return c[c.GetSelfCatalogKey()]
+}
+func initPromClient(localResolver pkg.Resolver) promv1.API {
+	got := make(chan string, 1)
+	go localResolver.Get("prometheus", got, time.Second*5)
+	ipAddress := <-got
+	close(got)
+	promClient, _ := promapi.NewClient(api.Config{
+		Address: fmt.Sprintf("http://%s:9090", ipAddress),
+	})
+	promAPIClient := promv1.NewAPI(promClient)
+
+	return promAPIClient
 }
 
 /*
