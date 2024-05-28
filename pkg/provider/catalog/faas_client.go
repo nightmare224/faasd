@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openfaas/go-sdk"
+	probing "github.com/prometheus-community/pro-bing"
 )
 
 type FaasP2PMapping struct {
@@ -115,15 +116,27 @@ func rankClientsByRTT(faasP2PMappingList []FaasP2PMapping) {
 		// for itself it is 0
 		rtt := time.Duration(0)
 		if mapping.P2PID != selfCatagoryKey {
-			startTime := time.Now()
+			// startTime := time.Now()
 			// can not ping to the faas gateway as this point it haven't start up yet
-			conn, err := net.DialTimeout("tcp", mapping.FaasClient.GatewayURL.Host, 5*time.Second)
+			// conn, err := net.DialTimeout("tcp", mapping.FaasClient.GatewayURL.Host, 5*time.Second)
+			// if err != nil {
+			// 	fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
+			// 	panic(err)
+			// }
+			// rtt = time.Since(startTime)
+			// conn.Close()
+			ip, _, _ := net.SplitHostPort(mapping.FaasClient.GatewayURL.Host)
+			pinger, err := probing.NewPinger(ip)
 			if err != nil {
-				fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
 				panic(err)
 			}
-			rtt = time.Since(startTime)
-			conn.Close()
+			pinger.Count = 3
+			err = pinger.Run() // Blocks until finished.
+			if err != nil {
+				panic(err)
+			}
+			stats := pinger.Statistics()
+			rtt = stats.AvgRtt
 		}
 		RTTtoMapping[rtt] = mapping
 		RTTs = append(RTTs, rtt)

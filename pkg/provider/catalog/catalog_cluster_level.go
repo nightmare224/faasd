@@ -17,6 +17,7 @@ func (c Catalog) GetAvailableFunction(functionName string) (types.FunctionStatus
 		if _, exist := c.NodeCatalog[selfCatagoryKey].AvailableFunctionsReplicas[functionName]; exist {
 			tmpFn.AvailableReplicas = c.NodeCatalog[selfCatagoryKey].AvailableFunctionsReplicas[functionName]
 		} else {
+			// If show zero here, the gateway would consider it as not ready
 			tmpFn.AvailableReplicas = 0
 		}
 		return tmpFn, nil

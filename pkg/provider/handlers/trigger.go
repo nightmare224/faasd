@@ -22,6 +22,7 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 
 	offload := true
 	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("Receive the trigger!\n")
 		if offload {
 			// this should be trigger the target faas client
 			vars := mux.Vars(r)
@@ -80,7 +81,7 @@ func findSuitableNode(functionName string, faasP2PMappingList []catalog.FaasP2PM
 			targetFunction = c.FunctionCatalog[functionName]
 			// this is where the function call be trigger (already have function on it)
 			if !overload {
-				// log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
+				log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
 				return nil, mapping, nil
 			}
 			break

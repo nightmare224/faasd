@@ -66,6 +66,9 @@ func MakeReplicaReaderHandler(client *containerd.Client, c catalog.Catalog) func
 		parts := strings.Split(functionName, ".")
 		fname := parts[0]
 		if fn, err := c.GetAvailableFunction(fname); err == nil {
+			//TODO: the available replicas here do not show the replica in the host, but show the
+			// overall replica, because if show 0 the gateway would consider it not ready
+			fn.AvailableReplicas = max(fn.Replicas, fn.AvailableReplicas)
 			functionBytes, _ := json.Marshal(fn)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
