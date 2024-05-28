@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/openfaas/faas-provider/types"
-	faasd "github.com/openfaas/faasd/pkg"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
 	// v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -17,22 +15,23 @@ import (
 )
 
 func (node *Node) addAvailableFunctions(functionStatus types.FunctionStatus) {
-	for _, fn := range node.AvailableFunctions {
-		if functionStatus.Name == fn.Name {
-			return
-		}
-	}
-	functionSet := append(node.AvailableFunctions, functionStatus)
-	node.AvailableFunctions = functionSet
-
+	// for _, fn := range node.AvailableFunctions {
+	// 	if functionStatus.Name == fn.Name {
+	// 		return
+	// 	}
+	// }
+	// functionSet := append(node.AvailableFunctions, functionStatus)
+	// node.AvailableFunctions = functionSet
+	node.AvailableFunctionsReplicas[functionStatus.Name] = functionStatus.AvailableReplicas
 }
 
 func (node *Node) deleteAvailableFunctions(functionName string) {
-	for i, fn := range node.AvailableFunctions {
-		if functionName == fn.Name {
-			node.AvailableFunctions = append(node.AvailableFunctions[:i], node.AvailableFunctions[i+1:]...)
-		}
-	}
+	// for i, fn := range node.AvailableFunctions {
+	// 	if functionName == fn.Name {
+	// 		node.AvailableFunctions = append(node.AvailableFunctions[:i], node.AvailableFunctions[i+1:]...)
+	// 	}
+	// }
+	delete(node.AvailableFunctionsReplicas, functionName)
 }
 
 // func (node *Node) UpdatePressure(overload bool) {
@@ -53,71 +52,71 @@ func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, clientPr
 }
 
 // preodically update the available repicas, based on the running info of the containerd
-func (node *Node) updateAvailableReplicas(client *containerd.Client) bool {
-	updated := false
-	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
-	for _, fn := range node.AvailableFunctions {
-		replicas := 0
-		c, err := client.LoadContainer(ctx, fn.Name)
-		if err != nil {
-			fmt.Printf("unable to find function: %s, error %s", fn.Name, err)
-			continue
-		}
-		task, err := c.Task(ctx, nil)
-		if err != nil {
-			fmt.Printf("unable to get task: %s, error %s", fn.Name, err)
-			continue
-		}
-		svc, err := task.Status(ctx)
-		if err != nil {
-			fmt.Printf("unable to get task status for container: %s, error: %s", fn.Name, err)
-			continue
-		}
-		if svc.Status == "running" {
-			replicas = 1
-		}
-		if uint64(replicas) != fn.AvailableReplicas {
-			fn.AvailableReplicas = uint64(replicas)
-			updated = true
-		}
-	}
-	return updated
-}
+// func (node *Node) updateAvailableReplicas(client *containerd.Client) bool {
+// 	updated := false
+// 	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
+// 	for _, fn := range node.AvailableFunctions {
+// 		replicas := 0
+// 		c, err := client.LoadContainer(ctx, fn.Name)
+// 		if err != nil {
+// 			fmt.Printf("unable to find function: %s, error %s", fn.Name, err)
+// 			continue
+// 		}
+// 		task, err := c.Task(ctx, nil)
+// 		if err != nil {
+// 			fmt.Printf("unable to get task: %s, error %s", fn.Name, err)
+// 			continue
+// 		}
+// 		svc, err := task.Status(ctx)
+// 		if err != nil {
+// 			fmt.Printf("unable to get task status for container: %s, error: %s", fn.Name, err)
+// 			continue
+// 		}
+// 		if svc.Status == "running" {
+// 			replicas = 1
+// 		}
+// 		if uint64(replicas) != fn.AvailableReplicas {
+// 			fn.AvailableReplicas = uint64(replicas)
+// 			updated = true
+// 		}
+// 	}
+// 	return updated
+// }
 
 // preodically update the available repicas, based on the running info of the containerd
-func (node *Node) updateAvailableReplicasWithFunctionName(client *containerd.Client, functionName string) bool {
-	updated := false
-	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
-	for _, fn := range node.AvailableFunctions {
-		if functionName == fn.Name {
-			replicas := 0
-			c, err := client.LoadContainer(ctx, fn.Name)
-			if err != nil {
-				fmt.Printf("unable to find function: %s, error %s", fn.Name, err)
-				break
-			}
-			task, err := c.Task(ctx, nil)
-			if err != nil {
-				fmt.Printf("unable to get task: %s, error %s", fn.Name, err)
-				break
-			}
-			svc, err := task.Status(ctx)
-			if err != nil {
-				fmt.Printf("unable to get task status for container: %s, error: %s", fn.Name, err)
-				break
-			}
-			if svc.Status == "running" {
-				replicas = 1
-			}
-			if uint64(replicas) != fn.AvailableReplicas {
-				fn.AvailableReplicas = uint64(replicas)
-				updated = true
-			}
-			break
-		}
-	}
-	return updated
-}
+// func (node *Node) updateAvailableReplicasWithFunctionName(client *containerd.Client, functionName string) bool {
+// 	updated := false
+// 	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
+// 	for _, fn := range node.AvailableFunctions {
+// 		if functionName == fn.Name {
+// 			replicas := 0
+// 			c, err := client.LoadContainer(ctx, fn.Name)
+// 			if err != nil {
+// 				fmt.Printf("unable to find function: %s, error %s", fn.Name, err)
+// 				break
+// 			}
+// 			task, err := c.Task(ctx, nil)
+// 			if err != nil {
+// 				fmt.Printf("unable to get task: %s, error %s", fn.Name, err)
+// 				break
+// 			}
+// 			svc, err := task.Status(ctx)
+// 			if err != nil {
+// 				fmt.Printf("unable to get task status for container: %s, error: %s", fn.Name, err)
+// 				break
+// 			}
+// 			if svc.Status == "running" {
+// 				replicas = 1
+// 			}
+// 			if uint64(replicas) != fn.AvailableReplicas {
+// 				fn.AvailableReplicas = uint64(replicas)
+// 				updated = true
+// 			}
+// 			break
+// 		}
+// 	}
+// 	return updated
+// }
 
 // add the overloaded infomation in it
 func (node *Node) updatePressure(client *promv1.API) bool {
@@ -142,7 +141,7 @@ func (node *Node) updatePressure(client *promv1.API) bool {
 		return updated
 	}
 	overload_update = overload_update || (MemLoad > MemOverloadThreshold)
-	time.Sleep(time.Second * 10)
+	// time.Sleep(time.Second * 10)
 	// fmt.Println("The update overload: ", overload_update)
 	// update
 	if overload_update != node.Overload {
@@ -176,5 +175,6 @@ func queryResourceAverageLoad(promClient *promv1.API, ctx context.Context, query
 }
 
 func (node *Node) publishInfo() {
+
 	node.infoChan <- &node.NodeInfo
 }

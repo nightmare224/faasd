@@ -2,12 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/containerd/containerd"
 	"github.com/gorilla/mux"
-	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
@@ -52,21 +51,22 @@ func MakeReplicaReaderHandler(client *containerd.Client, c catalog.Catalog) func
 		// } else {
 		// 	w.WriteHeader(http.StatusNotFound)
 		// }
-		var targetFunction types.FunctionStatus
-		found := false
-		for _, node := range c {
-			for _, fn := range node.AvailableFunctions {
-				// fmt.Printf("target function %s, available func %s.\n", functionName, fn.Name)
-				// use or without namespace
-				if functionName == fn.Name || functionName == fmt.Sprintf("%s.%s", fn.Name, fn.Namespace) {
-					targetFunction = fn
-					found = true
-					break
-				}
-			}
-		}
-		if found {
-			functionBytes, _ := json.Marshal(targetFunction)
+		// var targetFunction types.FunctionStatus
+		// for _, node := range c {
+		// for _, fn := range node.AvailableFunctions {
+		// 	// fmt.Printf("target function %s, available func %s.\n", functionName, fn.Name)
+		// 	// use or without namespace
+		// 	if functionName == fn.Name || functionName == fmt.Sprintf("%s.%s", fn.Name, fn.Namespace) {
+		// 		targetFunction = fn
+		// 		found = true
+		// 		break
+		// 	}
+		// }
+		// }
+		parts := strings.Split(functionName, ".")
+		fname := parts[0]
+		if fn, err := c.GetAvailableFunction(fname); err == nil {
+			functionBytes, _ := json.Marshal(fn)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write(functionBytes)

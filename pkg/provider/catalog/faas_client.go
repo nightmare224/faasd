@@ -42,10 +42,10 @@ func (mapping FaasP2PMapping) Resolve(name string) (url.URL, error) {
 
 func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
 
-	faasClients := newFaasClients(c[selfCatagoryKey].Ip)
+	faasClients := newFaasClients(c.NodeCatalog[selfCatagoryKey].Ip)
 	var faasP2PMappingList []FaasP2PMapping
 	for _, client := range faasClients {
-		for p2pID, p2pNode := range c {
+		for p2pID, p2pNode := range c.NodeCatalog {
 			if strings.HasPrefix(client.GatewayURL.Host, p2pNode.Ip) {
 				mapping := FaasP2PMapping{
 					FaasClient: client,

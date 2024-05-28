@@ -12,10 +12,12 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/namespaces"
+	gocni "github.com/containerd/go-cni"
 	"github.com/openfaas/faas-provider/types"
 	"github.com/openfaas/faasd/pkg"
 	faasd "github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/cninetwork"
+	"github.com/openfaas/faasd/pkg/service"
 )
 
 type Function struct {
@@ -68,6 +70,71 @@ func ListFunctions(client *containerd.Client, namespace string) (map[string]*Fun
 	return functions, nil
 }
 
+// if the container is resumable than resume, if not than delete
+func ResumeOrDeleteFunctions(client *containerd.Client, cni gocni.CNI, namespace string) error {
+	ctx := namespaces.WithNamespace(context.Background(), namespace)
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		log.Print("cannot list function\n")
+		return err
+	}
+	for _, c := range containers {
+		name := c.ID()
+		ctr, ctrErr := client.LoadContainer(ctx, name)
+		if ctrErr != nil {
+			log.Printf("cannot load function %s, error: %s\n", name, ctrErr)
+			return ctrErr
+		}
+
+		// var taskExists bool
+		var taskStatus *containerd.Status
+
+		task, taskErr := ctr.Task(ctx, nil)
+		if taskErr != nil {
+			log.Printf("cannot load task for service %s, error: %s", name, taskErr)
+			return taskErr
+		}
+		status, statusErr := task.Status(ctx)
+		if statusErr != nil {
+			log.Printf("cannot load task status for %s, error: %s", name, statusErr)
+			return statusErr
+		}
+		taskStatus = &status
+		deleteTask := false
+		if taskStatus.Status == containerd.Paused {
+			if resumeErr := task.Resume(ctx); resumeErr != nil {
+				log.Printf("error resuming task %s, error: %s\n", name, resumeErr)
+				deleteTask = true
+			}
+		}
+		if taskStatus.Status == containerd.Stopped || deleteTask {
+			// Stopped tasks cannot be restarted, must be removed, and created again
+			if _, delErr := task.Delete(ctx); delErr != nil {
+				log.Printf("error deleting stopped task %s, error: %s\n", name, delErr)
+				return delErr
+			}
+		}
+		switch taskStatus.Status {
+		case containerd.Paused, containerd.Pausing:
+			resumeErr := task.Resume(ctx)
+			if resumeErr == nil {
+				log.Printf("resuming task %s\n", name)
+				return nil
+			}
+			log.Printf("error resuming task %s, error: %s\n", name, resumeErr)
+			fallthrough
+		case containerd.Stopped, containerd.Unknown:
+			if delErr := DeleteFunction(client, cni, name, namespace); delErr != nil {
+				log.Printf("error deleting stopped task %s, error: %s\n", name, delErr)
+				return delErr
+			}
+			log.Printf("delete task %s\n", name)
+		}
+
+	}
+	return nil
+}
+
 func ListFunctionStatus(client *containerd.Client, namespace string) ([]types.FunctionStatus, error) {
 	res := []types.FunctionStatus{}
 	fns, err := ListFunctions(client, namespace)
@@ -94,6 +161,79 @@ func ListFunctionStatus(client *containerd.Client, namespace string) ([]types.Fu
 		res = append(res, status)
 	}
 	return res, nil
+}
+
+func GetFunctionStatus(client *containerd.Client, name string, namespace string) (types.FunctionStatus, error) {
+	ctx := namespaces.WithNamespace(context.Background(), namespace)
+
+	c, err := client.LoadContainer(ctx, name)
+	if err != nil {
+		return types.FunctionStatus{}, fmt.Errorf("unable to find function: %s, error %w", name, err)
+	}
+
+	image, err := c.Image(ctx)
+	if err != nil {
+		return types.FunctionStatus{}, err
+	}
+
+	containerName := c.ID()
+	allLabels, labelErr := c.Labels(ctx)
+
+	if labelErr != nil {
+		log.Printf("cannot list container %s labels: %s", containerName, labelErr)
+	}
+
+	labels, annotations := buildLabelsAndAnnotations(allLabels)
+
+	spec, err := c.Spec(ctx)
+	if err != nil {
+		return types.FunctionStatus{}, fmt.Errorf("unable to load function %s error: %w", name, err)
+	}
+
+	info, err := c.Info(ctx)
+	if err != nil {
+		return types.FunctionStatus{}, fmt.Errorf("can't load info for: %s, error %w", name, err)
+	}
+
+	envVars, envProcess := readEnvFromProcessEnv(spec.Process.Env)
+	secrets := readSecretsFromMounts(spec.Mounts)
+
+	replicas := 0
+	task, err := c.Task(ctx, nil)
+	if err == nil {
+		// Task for container exists
+		svc, err := task.Status(ctx)
+		if err != nil {
+			return types.FunctionStatus{}, fmt.Errorf("unable to get task status for container: %s %w", name, err)
+		}
+
+		if svc.Status == containerd.Running {
+			replicas = 1
+
+			// Get container IP address
+			_, err := cninetwork.GetIPAddress(name, task.Pid())
+			if err != nil {
+				return types.FunctionStatus{}, err
+			}
+		}
+	} else {
+		replicas = 0
+	}
+
+	status := types.FunctionStatus{
+		Name:              containerName,
+		Image:             image.Name(),
+		AvailableReplicas: uint64(replicas),
+		Replicas:          uint64(replicas),
+		Namespace:         namespace,
+		Labels:            &labels,
+		Annotations:       &annotations,
+		Secrets:           secrets,
+		EnvVars:           envVars,
+		EnvProcess:        envProcess,
+		CreatedAt:         info.CreatedAt,
+	}
+	return status, nil
 }
 
 // GetFunction returns a function that matches name
@@ -153,7 +293,7 @@ func GetFunction(client *containerd.Client, name string, namespace string) (Func
 			return Function{}, fmt.Errorf("unable to get task status for container: %s %w", name, err)
 		}
 
-		if svc.Status == "running" {
+		if svc.Status == containerd.Running {
 			replicas = 1
 			fn.pid = task.Pid()
 
@@ -168,8 +308,35 @@ func GetFunction(client *containerd.Client, name string, namespace string) (Func
 		replicas = 0
 	}
 
+	// local replicas
 	fn.replicas = replicas
 	return fn, nil
+}
+
+func DeleteFunction(client *containerd.Client, cni gocni.CNI, name string, namespace string) error {
+	_, err := GetFunction(client, name, namespace)
+
+	if err != nil {
+		msg := fmt.Sprintf("service %s not found", name)
+		log.Printf("[Delete] %s\n", msg)
+		return err
+	}
+
+	ctx := namespaces.WithNamespace(context.Background(), namespace)
+
+	// TODO: this needs to still happen if the task is paused
+	// ignore this error and contineue delete task
+	err = cninetwork.DeleteCNINetwork(ctx, cni, client, name)
+	if err != nil {
+		log.Printf("[Delete] error removing CNI network for %s, %s\n", name, err)
+	}
+
+	if err := service.Remove(ctx, client, name); err != nil {
+		log.Printf("[Delete] error removing %s, %s\n", name, err)
+		return err
+	}
+
+	return nil
 }
 
 func readEnvFromProcessEnv(env []string) (map[string]string, string) {

@@ -19,7 +19,7 @@ import (
 const privKeySelf = "/opt/p2p/privKey"
 const faasProtocolID = protocol.ID("/faas-initialize/1.0.0")
 
-func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
+func InitInfoNetwork(c Catalog) error {
 	ctx := context.Background()
 	host := newLibp2pHost()
 	ps := newPubSubRouter(ctx, host)
@@ -32,22 +32,22 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	// discovery the other host and join their room
 	err := setupDiscovery(host, ps, c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// create a info room as itself ID
 	ir, err := subscribeInfoRoom(ctx, ps, host.ID().String(), host.ID(), c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// the info of itself
-	if _, exist := c[selfCatagoryKey]; exist {
-		c[selfCatagoryKey].NodeMetadata = NodeMetadata{
+	if _, exist := c.NodeCatalog[selfCatagoryKey]; exist {
+		c.NodeCatalog[selfCatagoryKey].NodeMetadata = NodeMetadata{
 			Ip: extractIP4fromMultiaddr(host.Addrs()[0]),
 		}
-		c[selfCatagoryKey].infoChan = ir.infoChan
+		c.NodeCatalog[selfCatagoryKey].infoChan = ir.infoChan
 	} else {
-		return nil, fmt.Errorf("the self catalog should be initialize beforehand")
+		return fmt.Errorf("the self catalog should be initialize beforehand")
 	}
 	// c[selfCatagoryKey] = &Node{
 	// 	NodeInfo: NodeInfo{},
@@ -57,7 +57,7 @@ func InitInfoNetwork(c Catalog) (chan *NodeInfo, error) {
 	// 	infoChan: ir.infoChan,
 	// }
 
-	return ir.infoChan, nil
+	return nil
 }
 
 func newLibp2pHost() host.Host {

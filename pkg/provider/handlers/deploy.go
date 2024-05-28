@@ -101,22 +101,26 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 					log.Printf("error getting function %s status, error: %s\n", name, err)
 					return
 				case <-ticker.C:
-					f, err := GetFunction(client, name, namespace)
-					if err == nil {
-						fs := types.FunctionStatus{
-							Name:              f.name,
-							Image:             f.image,
-							AvailableReplicas: uint64(f.replicas),
-							Replicas:          uint64(f.replicas),
-							Namespace:         f.namespace,
-							Labels:            &f.labels,
-							Annotations:       &f.annotations,
-							Secrets:           f.secrets,
-							EnvVars:           f.envVars,
-							EnvProcess:        f.envProcess,
-							CreatedAt:         f.createdAt,
-						}
-						c.AddAvailableFunctions(fs)
+					// f, err := GetFunction(client, name, namespace)
+					// if err == nil {
+					// 	fs := types.FunctionStatus{
+					// 		Name:              f.name,
+					// 		Image:             f.image,
+					// 		AvailableReplicas: uint64(f.replicas),
+					// 		Replicas:          uint64(f.replicas),
+					// 		Namespace:         f.namespace,
+					// 		Labels:            &f.labels,
+					// 		Annotations:       &f.annotations,
+					// 		Secrets:           f.secrets,
+					// 		EnvVars:           f.envVars,
+					// 		EnvProcess:        f.envProcess,
+					// 		CreatedAt:         f.createdAt,
+					// 	}
+					// 	c.AddAvailableFunctions(fs)
+					// 	return
+					// }
+					if fn, err := GetFunctionStatus(client, name, namespace); err == nil && fn.AvailableReplicas > 0 {
+						c.AddAvailableFunctions(fn)
 						return
 					}
 				}

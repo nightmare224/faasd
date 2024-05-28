@@ -219,13 +219,16 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	defer client.Close()
 
+	//TODO: need to be better (ex: delete network)
+	handlers.ResumeOrDeleteFunctions(client, cni, faasd.DefaultFunctionNamespace)
+
 	// infoLevel := catalog.ClusterLevel
 	// create the catalog to store p
-	c := make(catalog.Catalog)
+	c := catalog.NewCatalog()
 	node := initSelfCatagory(c, client)
 	// create catalog
 	// infoChan, err := catalog.InitInfoNetwork(c)
-	_, InitNetworkErr := catalog.InitInfoNetwork(c)
+	InitNetworkErr := catalog.InitInfoNetwork(c)
 	if InitNetworkErr != nil {
 		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
 	}
@@ -285,15 +288,30 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 	fns, err := handlers.ListFunctionStatus(client, faasd.DefaultFunctionNamespace)
 	if err != nil {
 		fmt.Printf("cannot init available function: %s", err)
-		return nil
+		panic(err)
 	}
-	c[c.GetSelfCatalogKey()] = &catalog.Node{
+
+	c.NodeCatalog[c.GetSelfCatalogKey()] = &catalog.Node{
 		NodeInfo: catalog.NodeInfo{
-			AvailableFunctions: fns,
+			AvailableFunctionsReplicas: make(map[string]uint64),
 		},
 	}
-	return c[c.GetSelfCatalogKey()]
+	for _, fn := range fns {
+		// TODO: should be more sphofisticate
+		// if fn.AvailableReplicas != 0 {
+		c.FunctionCatalog[fn.Name] = &fn
+		c.NodeCatalog[c.GetSelfCatalogKey()].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
+		// }
+	}
+
+	return c.NodeCatalog[c.GetSelfCatalogKey()]
 }
+
+// TODO:Clean up the unsuable container in environement
+// func cleanDeadContainer() {
+
+// }
+
 func initPromClient(localResolver pkg.Resolver) promv1.API {
 	got := make(chan string, 1)
 	go localResolver.Get("prometheus", got, time.Second*5)

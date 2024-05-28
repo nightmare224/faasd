@@ -89,7 +89,7 @@ func (n *faasNotifiee) HandlePeerFound(pi peer.AddrInfo) {
 	// create the instance in catalog and then connect,
 	// to prevent the connect function call this function again
 	// init the catagory for the find peer
-	n.c[infoRoomName] = &Node{
+	n.c.NodeCatalog[infoRoomName] = &Node{
 		NodeInfo: NodeInfo{},
 		NodeMetadata: NodeMetadata{
 			Ip: extractIP4fromMultiaddr(pi.Addrs[0]),
@@ -151,7 +151,7 @@ func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
 	remotePeer := conn.RemotePeer()
 	fmt.Printf("New Peer Join: %s\n", remotePeer)
 	// if the is new peer than do the handler peer found first
-	if _, exist := n.c[remotePeer.String()]; !exist {
+	if _, exist := n.c.NodeCatalog[remotePeer.String()]; !exist {
 		pi := peer.AddrInfo{
 			ID:    remotePeer,
 			Addrs: []ma.Multiaddr{conn.RemoteMultiaddr()},
@@ -165,9 +165,8 @@ func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
 			return
 		}
 		defer stream.Close()
-		// TODO: Send Inital avaialable function
-		info := n.c[selfCatagoryKey].NodeInfo
-		infoBytes, err := json.Marshal(info)
+		infoMsg := packNodeInfoMsg(n.c, &n.c.NodeCatalog[selfCatagoryKey].NodeInfo)
+		infoBytes, err := json.Marshal(infoMsg)
 		if err != nil {
 			log.Printf("serialized info message error: %s\n", err)
 			return

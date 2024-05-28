@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -24,7 +25,8 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		if offload {
 			// this should be trigger the target faas client
 			vars := mux.Vars(r)
-			functionName := vars["name"]
+			parts := strings.Split(vars["name"], ".")
+			functionName := parts[0]
 			targetFunction, targetNodeMapping, err := findSuitableNode(functionName, faasP2PMappingList, c)
 			if err != nil {
 				fmt.Printf("Unable to trigger function: %v\n", err.Error())
@@ -69,20 +71,21 @@ func findSuitableNode(functionName string, faasP2PMappingList []catalog.FaasP2PM
 	var targetFunction *types.FunctionStatus = nil
 	var availableNode *catalog.FaasP2PMapping = nil
 	for _, mapping := range faasP2PMappingList {
-		overload := c[mapping.P2PID].Overload
-		for _, fn := range c[mapping.P2PID].AvailableFunctions {
-			// fmt.Printf("target function %s, available func %s.\n", functionName, fn.Name)
-			// use or without namespace
-			if functionName == fn.Name || functionName == fmt.Sprintf("%s.%s", fn.Name, fn.Namespace) {
-				targetFunction = &fn
-				// this is where the function call be trigger (already have function on it)
-				if !overload {
-					// log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
-					return nil, mapping, nil
-				}
-				break
+		overload := c.NodeCatalog[mapping.P2PID].Overload
+		// for _, fn := range c.NodeCatalog[mapping.P2PID].AvailableFunctions {
+		// fmt.Printf("target function %s, available func %s.\n", functionName, fn.Name)
+		// use or without namespace
+		// if functionName == fn.Name || functionName == fmt.Sprintf("%s.%s", fn.Name, fn.Namespace) {
+		if _, exist := c.NodeCatalog[mapping.P2PID].AvailableFunctionsReplicas[functionName]; exist {
+			targetFunction = c.FunctionCatalog[functionName]
+			// this is where the function call be trigger (already have function on it)
+			if !overload {
+				// log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
+				return nil, mapping, nil
 			}
+			break
 		}
+		// }
 		// mean no function found, but the cluster is available
 		if !overload && availableNode == nil {
 			availableNode = &mapping

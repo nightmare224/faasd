@@ -59,16 +59,17 @@ func subscribeInfoRoom(ctx context.Context, ps *pubsub.PubSub, infoRoomName stri
 	} else { // create a room
 		// new the channel to publish the infomation
 		ir.infoChan = make(chan *NodeInfo)
-		go ir.publishLoop()
+		go ir.publishLoop(c)
 	}
 
 	return ir, nil
 }
-func (ir *InfoRoom) publishLoop() {
+func (ir *InfoRoom) publishLoop(c Catalog) {
 	for {
 		info := <-ir.infoChan
+		infoMsg := packNodeInfoMsg(c, info)
 		// log.Println("Receive from channel:", info)
-		infoBytes, err := json.Marshal(info)
+		infoBytes, err := json.Marshal(infoMsg)
 		if err != nil {
 			log.Printf("serialized info message error: %s\n", err)
 			continue
@@ -95,20 +96,47 @@ func (ir *InfoRoom) subscribeLoop(c Catalog, infoRoomName string) {
 		// 	continue
 		// }
 
-		info := new(NodeInfo)
-		err = json.Unmarshal(msg.Data, info)
+		infoMsg := new(NodeInfoMsg)
+		err = json.Unmarshal(msg.Data, infoMsg)
 		if err != nil {
 			log.Printf("deserialized info message error: %s\n", err)
 			continue
 		}
-		fmt.Println("Receive info from publisher:", info)
+		fmt.Println("Receive info from publisher:", infoMsg)
 
 		// update the info in the node
-		c[infoRoomName].NodeInfo = *info
-		c.updatetReplicasWithNodeInfo(*info)
+		// c[infoRoomName].NodeInfo = *info
+		unpackNodeInfoMsg(c, infoMsg, infoRoomName)
+		// c.updatetReplicasWithNodeInfo(*info)
 	}
 }
+func packNodeInfoMsg(c Catalog, info *NodeInfo) *NodeInfoMsg {
+	infoMsg := new(NodeInfoMsg)
+	// AvailableFunctions
+	for fname, availableReplicas := range info.AvailableFunctionsReplicas {
+		fn := *c.FunctionCatalog[fname]
+		fn.AvailableReplicas = availableReplicas
+		infoMsg.AvailableFunctions = append(infoMsg.AvailableFunctions, fn)
+	}
+	// overload
+	infoMsg.Overload = info.Overload
 
-// func updateNodeInfo(info *NodeInfo, c Catalog) {
+	return infoMsg
+}
+func unpackNodeInfoMsg(c Catalog, infoMsg *NodeInfoMsg, infoRoomName string) {
+	// update pressure
+	c.NodeCatalog[infoRoomName].Overload = infoMsg.Overload
+	// update available replicate and functionCatalog
+	updateReplicas := make(map[string]uint64)
+	for _, fn := range infoMsg.AvailableFunctions {
+		updateReplicas[fn.Name] = fn.AvailableReplicas
+		// add to function Catalog if it is new function
+		if _, exist := c.FunctionCatalog[fn.Name]; !exist {
+			c.FunctionCatalog[fn.Name] = &fn
+		}
+	}
+	c.NodeCatalog[infoRoomName].AvailableFunctionsReplicas = updateReplicas
 
-// }
+	// update global replica
+	c.updatetReplicas()
+}

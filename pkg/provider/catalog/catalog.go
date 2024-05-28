@@ -23,21 +23,29 @@ const (
 	MemOverloadThreshold = 0.80
 )
 
+// key is the peer ID in string
+// type NodeCatalog map[string]*Node
+// type FunctionCatalog map[string]types.FunctionStatus
+
+type Catalog struct {
+	// to prevent reinsert for modify Node by using pointer
+	NodeCatalog     map[string]*Node
+	FunctionCatalog map[string]*types.FunctionStatus
+}
+
 type NodeInfo struct {
+	AvailableFunctionsReplicas map[string]uint64
+	Overload                   bool
+}
+
+type NodeInfoMsg struct {
 	AvailableFunctions []types.FunctionStatus `json:"availableFunctions"`
 	Overload           bool                   `json:"overload"`
 }
 
-// key is the peer ID in string
-type Catalog map[string]*Node
-
 type NodeMetadata struct {
 	Ip       string `json:"ip"`
 	Hostname string `json:"hostname"`
-	// FaasPort     string `json:"faasPort"`
-	// FaasPath     string `json:"faasPath"`
-	// FaaSUser     string `json:"faasUser"`
-	// FaaSPassword string `json:"faasPassword"`
 }
 
 type Node struct {
@@ -45,6 +53,11 @@ type Node struct {
 	NodeMetadata
 	infoChan chan *NodeInfo
 }
+
+// type FunctionReplicas struct {
+// 	functionStatus    map[string]types.FunctionStatus
+// 	availableReplicas []map[string]uint64
+// }
 
 func (c Catalog) GetSelfCatalogKey() string {
 	return selfCatagoryKey
@@ -55,3 +68,10 @@ func (c Catalog) GetSelfCatalogKey() string {
 
 // publishInfo(c[selfCatagoryKey].infoChan, &c[selfCatagoryKey].NodeInfo)
 // }
+
+func NewCatalog() Catalog {
+	return Catalog{
+		NodeCatalog:     make(map[string]*Node),
+		FunctionCatalog: make(map[string]*types.FunctionStatus),
+	}
+}
