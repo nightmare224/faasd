@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/openfaas/go-sdk"
 )
@@ -42,8 +45,15 @@ func (mapping FaasP2PMapping) Resolve(name string) (url.URL, error) {
 
 func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
 
+	faasP2PMappingList := []FaasP2PMapping{
+		// also add itself into it (for itself, it don't need the faas client)
+		{
+			FaasClient: nil,
+			P2PID:      selfCatagoryKey,
+		},
+	}
+	//
 	faasClients := newFaasClients(c.NodeCatalog[selfCatagoryKey].Ip)
-	var faasP2PMappingList []FaasP2PMapping
 	for _, client := range faasClients {
 		for p2pID, p2pNode := range c.NodeCatalog {
 			if strings.HasPrefix(client.GatewayURL.Host, p2pNode.Ip) {
@@ -58,14 +68,73 @@ func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
 
 		// testFaasClient(client)
 	}
-	// also add itself into it
-	mapping := FaasP2PMapping{
-		FaasClient: nil,
-		P2PID:      selfCatagoryKey,
-	}
-	faasP2PMappingList = append(faasP2PMappingList, mapping)
+
+	rankClientsByRTT(faasP2PMappingList)
+
 	// log.Println(faasP2PMappingList)
 	return faasP2PMappingList
+}
+
+// put it from the fastest client to slowest client
+// func rankClientsByRTT(clients []*sdk.Client) {
+
+// 	// make this run every
+// 	var sortedRTTClients []*sdk.Client
+// 	var RTTs []time.Duration
+// 	RTTtoIdx := make(map[time.Duration]int)
+// 	for idx, client := range clients {
+// 		startTime := time.Now()
+// 		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
+// 		if err != nil {
+// 			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
+// 		}
+// 		rtt := time.Since(startTime)
+// 		conn.Close()
+// 		RTTtoIdx[rtt] = idx
+// 		RTTs = append(RTTs, rtt)
+// 		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
+// 	}
+// 	slices.Sort(RTTs)
+// 	for _, rtt := range RTTs {
+// 		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
+// 	}
+// 	// copy back to original array
+// 	for i, client := range sortedRTTClients {
+// 		clients[i] = client
+// 	}
+
+// }
+
+// put it from the fastest client to slowest client
+func rankClientsByRTT(faasP2PMappingList []FaasP2PMapping) {
+
+	// TODO: make this run periodically?
+	var RTTs []time.Duration
+	RTTtoMapping := make(map[time.Duration]FaasP2PMapping)
+	for _, mapping := range faasP2PMappingList {
+		// for itself it is 0
+		rtt := time.Duration(0)
+		if mapping.P2PID != selfCatagoryKey {
+			startTime := time.Now()
+			// can not ping to the faas gateway as this point it haven't start up yet
+			conn, err := net.DialTimeout("tcp", mapping.FaasClient.GatewayURL.Host, 5*time.Second)
+			if err != nil {
+				fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
+				panic(err)
+			}
+			rtt = time.Since(startTime)
+			conn.Close()
+		}
+		RTTtoMapping[rtt] = mapping
+		RTTs = append(RTTs, rtt)
+		fmt.Println("RTT: ", rtt, "P2P ID: ", mapping.P2PID)
+	}
+	slices.Sort(RTTs)
+	// copy back to original array
+	for i, rtt := range RTTs {
+		faasP2PMappingList[i] = RTTtoMapping[rtt]
+	}
+
 }
 
 // func testFaasClient(client *sdk.Client) {

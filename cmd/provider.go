@@ -5,10 +5,8 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"path"
-	"slices"
 	"time"
 
 	"github.com/containerd/containerd"
@@ -22,7 +20,6 @@ import (
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/provider/config"
 	"github.com/openfaas/faasd/pkg/provider/handlers"
-	"github.com/openfaas/go-sdk"
 	"github.com/prometheus/client_golang/api"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -114,59 +111,30 @@ func makeProviderCmd() *cobra.Command {
 // 	return clients, nil
 // }
 
-// put it from the fastest client to slowest client
-func rankClientsByRTT(clients []*sdk.Client) {
+// func measureRTT(clients []*sdk.Client) []*sdk.Client {
 
-	// make this run every
-	var sortedRTTClients []*sdk.Client
-	var RTTs []time.Duration
-	RTTtoIdx := make(map[time.Duration]int)
-	for idx, client := range clients {
-		startTime := time.Now()
-		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
-		if err != nil {
-			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
-		}
-		rtt := time.Since(startTime)
-		conn.Close()
-		RTTtoIdx[rtt] = idx
-		RTTs = append(RTTs, rtt)
-		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
-	}
-	slices.Sort(RTTs)
-	for _, rtt := range RTTs {
-		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
-	}
-	// copy back to original array
-	for i, client := range sortedRTTClients {
-		clients[i] = client
-	}
+// 	var sortedRTTClients []*sdk.Client
+// 	var RTTs []time.Duration
+// 	RTTtoIdx := make(map[time.Duration]int)
+// 	for idx, client := range clients {
+// 		startTime := time.Now()
+// 		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
+// 		if err != nil {
+// 			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
+// 		}
+// 		rtt := time.Since(startTime)
+// 		conn.Close()
+// 		RTTtoIdx[rtt] = idx
+// 		RTTs = append(RTTs, rtt)
+// 		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
+// 	}
+// 	slices.Sort(RTTs)
+// 	for _, rtt := range RTTs {
+// 		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
+// 	}
 
-}
-func measureRTT(clients []*sdk.Client) []*sdk.Client {
-
-	var sortedRTTClients []*sdk.Client
-	var RTTs []time.Duration
-	RTTtoIdx := make(map[time.Duration]int)
-	for idx, client := range clients {
-		startTime := time.Now()
-		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
-		if err != nil {
-			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
-		}
-		rtt := time.Since(startTime)
-		conn.Close()
-		RTTtoIdx[rtt] = idx
-		RTTs = append(RTTs, rtt)
-		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
-	}
-	slices.Sort(RTTs)
-	for _, rtt := range RTTs {
-		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
-	}
-
-	return sortedRTTClients
-}
+// 	return sortedRTTClients
+// }
 
 func runProviderE(cmd *cobra.Command, _ []string) error {
 
