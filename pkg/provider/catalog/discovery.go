@@ -89,14 +89,9 @@ func (n *faasNotifiee) HandlePeerFound(pi peer.AddrInfo) {
 	// create the instance in catalog and then connect,
 	// to prevent the connect function call this function again
 	// init the catagory for the find peer
-	n.c.NodeCatalog[infoRoomName] = &Node{
-		NodeInfo: NodeInfo{},
-		NodeMetadata: NodeMetadata{
-			Ip: extractIP4fromMultiaddr(pi.Addrs[0]),
-		},
-		// do need info chan for the external peer
-		infoChan: nil,
-	}
+	node := NewNode()
+	node.Ip = extractIP4fromMultiaddr(pi.Addrs[0])
+	n.c.NodeCatalog[infoRoomName] = &node
 	ctx := context.Background()
 	err := n.h.Connect(ctx, pi)
 	if err != nil {

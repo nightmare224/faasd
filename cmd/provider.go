@@ -259,11 +259,8 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 		panic(err)
 	}
 
-	c.NodeCatalog[c.GetSelfCatalogKey()] = &catalog.Node{
-		NodeInfo: catalog.NodeInfo{
-			AvailableFunctionsReplicas: make(map[string]uint64),
-		},
-	}
+	node := catalog.NewNode()
+	c.NodeCatalog[c.GetSelfCatalogKey()] = &node
 	for _, fn := range fns {
 		// TODO: should be more sphofisticate
 		// if fn.AvailableReplicas != 0 {

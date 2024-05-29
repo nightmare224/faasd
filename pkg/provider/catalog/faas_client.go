@@ -34,7 +34,7 @@ type FaasConfig struct {
 	Password string `json:"password"`
 }
 
-func (mapping FaasP2PMapping) Resolve(name string) (url.URL, error) {
+func (mapping *FaasP2PMapping) Resolve(name string) (url.URL, error) {
 	// mapping.FaasClient.GatewayURL
 	// functionAddr := url.URL{
 	// 	Scheme: "http",

@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"time"
+
 	"github.com/openfaas/faas-provider/types"
 )
 
@@ -34,6 +36,7 @@ type Catalog struct {
 }
 
 type NodeInfo struct {
+	FunctionExecutionTime      map[string]time.Duration
 	AvailableFunctionsReplicas map[string]uint64
 	Overload                   bool
 }
@@ -73,5 +76,16 @@ func NewCatalog() Catalog {
 	return Catalog{
 		NodeCatalog:     make(map[string]*Node),
 		FunctionCatalog: make(map[string]*types.FunctionStatus),
+	}
+}
+
+func NewNode() Node {
+	return Node{
+		NodeInfo: NodeInfo{
+			AvailableFunctionsReplicas: make(map[string]uint64),
+			FunctionExecutionTime:      make(map[string]time.Duration),
+		},
+		NodeMetadata: NodeMetadata{},
+		infoChan:     nil,
 	}
 }

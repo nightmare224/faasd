@@ -15,6 +15,7 @@ import (
 	fhttputil "github.com/openfaas/faas-provider/httputil"
 	"github.com/openfaas/faas-provider/proxy"
 	"github.com/openfaas/faas-provider/types"
+	faasd "github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
@@ -55,10 +56,11 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 			}
 			// trigger the function here
 			// if non local than change the resolver
+			invokeResolver := resolver
 			if targetNodeMapping.P2PID != c.GetSelfCatalogKey() {
-				resolver = targetNodeMapping
+				invokeResolver = &targetNodeMapping
 			}
-			offloadRequest(w, r, config, resolver)
+			offloadRequest(w, r, config, invokeResolver, c)
 
 		} else {
 			proxy.NewHandlerFunc(config, resolver, true)(w, r)
@@ -102,7 +104,7 @@ func findSuitableNode(functionName string, faasP2PMappingList []catalog.FaasP2PM
 }
 
 // maybe in other place when the platform is overload the request can be redirect
-func offloadRequest(w http.ResponseWriter, r *http.Request, config types.FaaSConfig, resolver proxy.BaseURLResolver) {
+func offloadRequest(w http.ResponseWriter, r *http.Request, config types.FaaSConfig, resolver proxy.BaseURLResolver, c catalog.Catalog) {
 	if resolver == nil {
 		panic("NewHandlerFunc: empty proxy handler resolver, cannot be nil")
 	}
@@ -126,7 +128,7 @@ func offloadRequest(w http.ResponseWriter, r *http.Request, config types.FaaSCon
 
 	// only allow the Get and Post request
 	if r.Method == http.MethodPost || r.Method == http.MethodGet {
-		proxyRequest(w, r, proxyClient, resolver, &reverseProxy)
+		proxyRequest(w, r, proxyClient, resolver, &reverseProxy, c)
 	} else {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -139,7 +141,7 @@ const (
 )
 
 // proxyRequest handles the actual resolution of and then request to the function service.
-func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient *http.Client, resolver proxy.BaseURLResolver, reverseProxy *httputil.ReverseProxy) {
+func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient *http.Client, resolver proxy.BaseURLResolver, reverseProxy *httputil.ReverseProxy, c catalog.Catalog) {
 	ctx := originalReq.Context()
 
 	pathVars := mux.Vars(originalReq)
@@ -181,6 +183,19 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 	defer func() {
 		seconds := time.Since(start)
 		log.Printf("%s took %f seconds\n", functionName, seconds.Seconds())
+		actualFunctionName := functionName
+		if strings.Contains(functionName, ".") {
+			actualFunctionName = strings.TrimSuffix(functionName, "."+faasd.DefaultFunctionNamespace)
+		}
+		switch val := resolver.(type) {
+		case *catalog.FaasP2PMapping:
+			log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
+			c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName] = seconds
+		case *InvokeResolver:
+			c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[actualFunctionName] = seconds
+		default:
+			log.Printf("Failed to find the type of resolver when recording execution time.\n")
+		}
 	}()
 
 	if v := originalReq.Header.Get("Accept"); v == "text/event-stream" {
