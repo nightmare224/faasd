@@ -22,10 +22,10 @@ import (
 
 func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) http.HandlerFunc {
 
-	offload := true
+	enableOffload := true
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Receive the trigger!\n")
-		if offload {
+		if enableOffload && !isOffloadRequest(r) {
 			// this should be trigger the target faas client
 			vars := mux.Vars(r)
 			parts := strings.Split(vars["name"], ".")
@@ -61,12 +61,21 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 			if targetNodeMapping.P2PID != c.GetSelfCatalogKey() {
 				invokeResolver = &targetNodeMapping
 			}
+			markAsOffloadRequest(r)
 			offloadRequest(w, r, config, invokeResolver, c)
-
 		} else {
 			proxy.NewHandlerFunc(config, resolver, true)(w, r)
 		}
 	}
+}
+func markAsOffloadRequest(r *http.Request) {
+	r.URL.RawQuery = "offload=1"
+}
+func isOffloadRequest(r *http.Request) bool {
+	offload := r.URL.Query().Get("offload")
+
+	// If there are no values associated with the key, Get returns the empty string
+	return offload == "1"
 }
 
 // return the select p2pid to execution function based on last weighted exec time
