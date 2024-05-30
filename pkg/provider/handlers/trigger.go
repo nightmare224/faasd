@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	weightedrand "github.com/mroth/weightedrand/v2"
 	fhttputil "github.com/openfaas/faas-provider/httputil"
 	"github.com/openfaas/faas-provider/proxy"
 	"github.com/openfaas/faas-provider/types"
@@ -19,7 +20,7 @@ import (
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
-func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, faasP2PMappingList []catalog.FaasP2PMapping, c catalog.Catalog) http.HandlerFunc {
+func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) http.HandlerFunc {
 
 	offload := true
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -68,39 +69,118 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 	}
 }
 
+// return the select p2pid to execution function based on last weighted exec time
+func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalog.Node) (string, error) {
+
+	// var choices []*weightedrand.Chooser[T, W]
+	var execTimeProd time.Duration = 1
+	p2pIDExecTimeMapping := make(map[string]time.Duration)
+	for p2pID, node := range NodeCatalog {
+		// skip the overload node
+		if node.Overload {
+			continue
+		}
+		if _, exist := node.AvailableFunctionsReplicas[functionName]; exist {
+			// no execTime record yet, just gave one
+			execTime := time.Duration(1)
+			if t, exist := node.FunctionExecutionTime[functionName]; exist {
+				execTime = t
+				execTimeProd *= execTime
+			}
+			p2pIDExecTimeMapping[p2pID] = execTime
+		}
+	}
+	// leftProd := []time.Duration{1}
+	// execTimeList := make([]time.Duration, 0)
+	// p2pIDList := make([]string, 0)
+	// for p2pID, node := range NodeCatalog {
+	// 	// skip the overload node
+	// 	if node.Overload {
+	// 		continue
+	// 	}
+	// 	if _, exist := node.AvailableFunctionsReplicas[functionName]; exist {
+	// 		// default exec time, no execTime record yet, just give the fastest time
+	// 		execTime := time.Duration(1)
+	// 		if t, exist := node.FunctionExecutionTime[functionName]; exist {
+	// 			// execTimeProd *= execTime
+	// 			execTime = t
+	// 		}
+	// 		leftProd = append(leftProd, leftProd[len(leftProd)-1]*execTime)
+	// 		execTimeList = append(execTimeList, execTime)
+	// 		p2pIDList = append(p2pIDList, p2pID)
+	// 	}
+	// }
+	// all the node with funtion is overload
+	if len(p2pIDExecTimeMapping) == 0 {
+		return "", fmt.Errorf("no non-overloaded node to execution function: %s", functionName)
+	}
+
+	choices := make([]weightedrand.Choice[string, time.Duration], 0)
+	// rightProd := make([]time.Duration, len(leftProd))
+	// rightProd[len(leftProd)-1] = 1
+	// for i := len(execTimeList) - 1; i >= 0; i-- {
+	// 	choices = append(choices, weightedrand.NewChoice(p2pIDList[i], rightProd[i]*leftProd[i]))
+	// 	rightProd[i-1] = rightProd[i] * execTimeList[i]
+	// }
+
+	for p2pID, execTime := range p2pIDExecTimeMapping {
+		probability := execTimeProd / execTime
+		choices = append(choices, weightedrand.NewChoice(p2pID, probability))
+		fmt.Printf("exec time map %s: %s (probability: %s)\n", p2pID, execTime, probability)
+	}
+	chooser, _ := weightedrand.NewChooser(
+		choices...,
+	)
+
+	return chooser.Pick(), nil
+}
+
 // find the information of functionstatus, and found the one can be deployed/triggered this function
 // if the first parameter is nil, mean do not require deploy before trigger
-func findSuitableNode(functionName string, faasP2PMappingList []catalog.FaasP2PMapping, c catalog.Catalog) (*types.FunctionStatus, catalog.FaasP2PMapping, error) {
-	var targetFunction *types.FunctionStatus = nil
-	var availableNode *catalog.FaasP2PMapping = nil
-	for _, mapping := range faasP2PMappingList {
-		overload := c.NodeCatalog[mapping.P2PID].Overload
-		// for _, fn := range c.NodeCatalog[mapping.P2PID].AvailableFunctions {
-		// fmt.Printf("target function %s, available func %s.\n", functionName, fn.Name)
-		// use or without namespace
-		// if functionName == fn.Name || functionName == fmt.Sprintf("%s.%s", fn.Name, fn.Namespace) {
-		if _, exist := c.NodeCatalog[mapping.P2PID].AvailableFunctionsReplicas[functionName]; exist {
-			targetFunction = c.FunctionCatalog[functionName]
-			// this is where the function call be trigger (already have function on it)
-			if !overload {
-				log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
-				return nil, mapping, nil
-			}
-			break
-		}
-		// }
-		// mean no function found, but the cluster is available
-		if !overload && availableNode == nil {
-			availableNode = &mapping
-		}
-	}
-	if targetFunction == nil {
+func findSuitableNode(functionName string, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) (*types.FunctionStatus, catalog.FaasP2PMapping, error) {
+
+	targetFunction, exist := c.FunctionCatalog[functionName]
+	if !exist {
 		err := fmt.Errorf("no endpoints available for: %s", functionName)
-		return nil, *availableNode, err
+		return nil, catalog.FaasP2PMapping{}, err
 	}
-	log.Printf("deploy found function %s at %s\n", functionName, availableNode.P2PID)
+	p2pID, err := weightExecTimeScheduler(functionName, c.NodeCatalog)
+	// if can not found the suitable node to execute function, report the first non-overload node
+	if err != nil {
+		for p2pID, node := range c.NodeCatalog {
+			if !node.Overload {
+				return targetFunction, faasP2PMappingList.GetByP2PID(p2pID), nil
+			}
+		}
+	}
+
+	// why don't change it to map?
+	return nil, faasP2PMappingList.GetByP2PID(p2pID), nil
+
+	// for _, mapping := range faasP2PMappingList {
+	// 	overload := c.NodeCatalog[mapping.P2PID].Overload
+	// 	if _, exist := c.NodeCatalog[mapping.P2PID].AvailableFunctionsReplicas[functionName]; exist {
+	// 		targetFunction = c.FunctionCatalog[functionName]
+	// 		// this is where the function call be trigger (already have function on it)
+	// 		if !overload {
+	// 			log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
+	// 			return nil, mapping, nil
+	// 		}
+	// 		break
+	// 	}
+	// 	// }
+	// 	// mean no function found, but the cluster is available
+	// 	if !overload && availableNode == nil {
+	// 		availableNode = &mapping
+	// 	}
+	// }
+	// if targetFunction == nil {
+	// 	err := fmt.Errorf("no endpoints available for: %s", functionName)
+	// 	return nil, *availableNode, err
+	// }
+	// log.Printf("deploy found function %s at %s\n", functionName, availableNode.P2PID)
 	// mean no free cluster with function found, but function are somewhere, so deploy on the available cluster
-	return targetFunction, *availableNode, nil
+	// return targetFunction, *availableNode, nil
 }
 
 // maybe in other place when the platform is overload the request can be redirect

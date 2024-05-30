@@ -22,6 +22,9 @@ type FaasP2PMapping struct {
 	P2PID      string
 }
 
+// the list of FaasP2PMapping is sorted by the network distance
+type FaasP2PMappingList []FaasP2PMapping
+
 // type FaasClient sdk.Client
 
 const faasConfigPath = "/opt/faasd/secrets/faasclient/"
@@ -44,9 +47,19 @@ func (mapping *FaasP2PMapping) Resolve(name string) (url.URL, error) {
 	return *mapping.FaasClient.GatewayURL, nil
 }
 
-func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
+func (l FaasP2PMappingList) GetByP2PID(p2pID string) FaasP2PMapping {
+	for _, mapping := range l {
+		if mapping.P2PID == p2pID {
+			return mapping
+		}
+	}
 
-	faasP2PMappingList := []FaasP2PMapping{
+	return FaasP2PMapping{}
+}
+
+func NewFaasP2PMappingList(c Catalog) FaasP2PMappingList {
+
+	faasP2PMappingList := FaasP2PMappingList{
 		// also add itself into it (for itself, it don't need the faas client)
 		{
 			FaasClient: nil,
@@ -107,7 +120,7 @@ func NewFaasP2PMappingList(c Catalog) []FaasP2PMapping {
 // }
 
 // put it from the fastest client to slowest client
-func rankClientsByRTT(faasP2PMappingList []FaasP2PMapping) {
+func rankClientsByRTT(faasP2PMappingList FaasP2PMappingList) {
 
 	// TODO: make this run periodically?
 	var RTTs []time.Duration
