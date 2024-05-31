@@ -235,7 +235,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client, c),
-		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni),
+		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni, faasP2PMappingList, c),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},
 		Health:          handlers.MakeHealthHandler(localResolver, node),
