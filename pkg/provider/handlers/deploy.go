@@ -20,6 +20,7 @@ import (
 	"github.com/docker/distribution/reference"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/openfaas/faas-provider/types"
+	faasd "github.com/openfaas/faasd/pkg"
 	cninetwork "github.com/openfaas/faasd/pkg/cninetwork"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/service"
@@ -86,46 +87,37 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 
 		// update the catalog until the function is ready
 		go func() {
-			// timeout 60 second
-			const (
-				timeout = 60
-				step    = 5
-			)
-			ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
-			defer cancel()
-			ticker := time.NewTicker(step * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					log.Printf("error getting function %s status, error: %s\n", name, err)
-					return
-				case <-ticker.C:
-					// f, err := GetFunction(client, name, namespace)
-					// if err == nil {
-					// 	fs := types.FunctionStatus{
-					// 		Name:              f.name,
-					// 		Image:             f.image,
-					// 		AvailableReplicas: uint64(f.replicas),
-					// 		Replicas:          uint64(f.replicas),
-					// 		Namespace:         f.namespace,
-					// 		Labels:            &f.labels,
-					// 		Annotations:       &f.annotations,
-					// 		Secrets:           f.secrets,
-					// 		EnvVars:           f.envVars,
-					// 		EnvProcess:        f.envProcess,
-					// 		CreatedAt:         f.createdAt,
-					// 	}
-					// 	c.AddAvailableFunctions(fs)
-					// 	return
-					// }
-					if fn, err := GetFunctionStatus(client, name, namespace); err == nil && fn.AvailableReplicas > 0 {
-						c.AddAvailableFunctions(fn)
-						return
-					}
-				}
+			fn, err := waitDeployReadyAndReport(client, cni, name)
+			if err != nil {
+				log.Printf("[Deploy] error deploying %s, error: %s\n", name, err)
+				return
 			}
+			c.AddAvailableFunctions(fn)
 		}()
+	}
+}
+
+func waitDeployReadyAndReport(client *containerd.Client, cni gocni.CNI, name string) (types.FunctionStatus, error) {
+	// timeout 60 second
+	const (
+		timeout = 60
+		step    = 5
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(step * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			err := fmt.Errorf("error getting function %s status, error: %s", name)
+			return types.FunctionStatus{}, err
+		case <-ticker.C:
+			if fn, err := GetFunctionStatus(client, name, faasd.DefaultFunctionNamespace); err == nil && fn.AvailableReplicas > 0 {
+				// c.AddAvailableFunctions(fn)
+				return fn, nil
+			}
+		}
 	}
 }
 

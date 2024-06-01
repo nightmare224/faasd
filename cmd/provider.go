@@ -47,95 +47,6 @@ func makeProviderCmd() *cobra.Command {
 	return command
 }
 
-// func connectExternalProvider() ([]*sdk.Client, error) {
-// 	externalSecretMountPath := path.Join(faasdwd, "secrets/external")
-// 	if err := ensureWorkingDir(externalSecretMountPath); err != nil {
-// 		return nil, err
-// 	}
-
-// 	var clients []*sdk.Client = nil
-// 	files, _ := os.ReadDir(externalSecretMountPath)
-// 	hostsfile, err := os.OpenFile("/etc/hosts", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 		return nil, err
-// 	}
-// 	defer hostsfile.Close()
-// 	for _, file := range files {
-// 		if !file.IsDir() {
-// 			continue
-// 		}
-// 		secretPath := path.Join(externalSecretMountPath, file.Name())
-// 		reader := auth.ReadBasicAuthFromDisk{
-// 			SecretMountPath: secretPath,
-// 		}
-// 		credentials, err := reader.Read()
-// 		if err != nil {
-// 			log.Fatal(err)
-// 			continue
-// 		}
-// 		data, hostErr := os.ReadFile(path.Join(secretPath, "basic-auth-host"))
-// 		hostinfo := ExternalHostInfo{}
-// 		if hostErr != nil {
-// 			err := fmt.Errorf("unable to load %s", hostErr)
-// 			log.Fatal(err)
-// 			continue
-// 		}
-// 		json.Unmarshal(data, &hostinfo)
-// 		hosturl := fmt.Sprintf("http://%s:%s", hostinfo.Ip, hostinfo.Port)
-// 		if hostinfo.Hostname != "" {
-// 			_, err := hostsfile.WriteString(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname))
-// 			if err != nil {
-// 				err := fmt.Errorf("cannot write hosts file: %s", err)
-// 				log.Fatal(err)
-// 				continue
-// 			}
-// 			hosturl = fmt.Sprintf("http://%s:%s", hostinfo.Hostname, hostinfo.Port)
-// 		}
-// 		// writeHostsErr := os.WriteFile("/etc/hosts", []byte(fmt.Sprintf("%s\t%s", hostinfo.Ip, hostinfo.Hostname)), 0x0644)
-
-// 		gatewayURL, _ := url.Parse(hosturl)
-// 		auth := &sdk.BasicAuth{
-// 			Username: credentials.User,
-// 			Password: credentials.Password,
-// 		}
-// 		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
-// 		clients = append(clients, client)
-// 		log.Printf("Connect with the external client: %s\n", hosturl)
-// 	}
-// 	if clients != nil {
-// 		// clients = measureRTT(clients)
-// 		rankClientsByRTT(clients)
-// 	}
-
-// 	return clients, nil
-// }
-
-// func measureRTT(clients []*sdk.Client) []*sdk.Client {
-
-// 	var sortedRTTClients []*sdk.Client
-// 	var RTTs []time.Duration
-// 	RTTtoIdx := make(map[time.Duration]int)
-// 	for idx, client := range clients {
-// 		startTime := time.Now()
-// 		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
-// 		if err != nil {
-// 			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
-// 		}
-// 		rtt := time.Since(startTime)
-// 		conn.Close()
-// 		RTTtoIdx[rtt] = idx
-// 		RTTs = append(RTTs, rtt)
-// 		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
-// 	}
-// 	slices.Sort(RTTs)
-// 	for _, rtt := range RTTs {
-// 		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
-// 	}
-
-// 	return sortedRTTClients
-// }
-
 func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	pullPolicy, flagErr := cmd.Flags().GetString("pull-policy")
@@ -235,7 +146,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client, c),
-		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni, faasP2PMappingList, c),
+		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni, baseUserSecretsPath, faasP2PMappingList, c),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},
 		Health:          handlers.MakeHealthHandler(localResolver, node),

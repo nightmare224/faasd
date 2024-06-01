@@ -26,6 +26,10 @@ type Client struct {
 	ClientAuth ClientAuth
 }
 
+type ctxstring string
+
+const offloadKey ctxstring = "offload"
+
 // Wrap http request Do function to support debug capabilities
 func (s *Client) do(req *http.Request) (*http.Response, error) {
 	if os.Getenv("FAAS_DEBUG") == "1" {
@@ -551,6 +555,11 @@ func (s *Client) ScaleFunction(ctx context.Context, functionName, namespace stri
 	functionPath := filepath.Join("/system/scale-function", functionName)
 
 	u.Path = functionPath
+
+	_, ok := ctx.Value(offloadKey).(string)
+	if !ok {
+		u.RawQuery = "offload=1"
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bodyReader)
 	if err != nil {
