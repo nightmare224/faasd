@@ -65,7 +65,7 @@ services:
         target: /run/secrets/basic-auth-user
       - type: bind
         source: ./alertmanager.yml
-        target: /alertmanager.yml
+        target: /etc/alertmanager/alertmanager.yml
     cap_add:
       - CAP_NET_RAW
 

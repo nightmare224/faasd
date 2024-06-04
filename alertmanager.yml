@@ -20,7 +20,7 @@ inhibit_rules:
 receivers:
 - name: 'scale'
   webhook_configs:
-    - url: 'gateway:8080/system/alert'
+    - url: 'http://gateway:8080/system/alert'
       send_resolved: false
       http_config:
         basic_auth:
