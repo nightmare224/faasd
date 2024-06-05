@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync/atomic"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -124,18 +125,32 @@ func packNodeInfoMsg(c Catalog, info *NodeInfo) *NodeInfoMsg {
 	return infoMsg
 }
 func unpackNodeInfoMsg(c Catalog, infoMsg *NodeInfoMsg, infoRoomName string) {
+
+	node := c.NodeCatalog[infoRoomName]
 	// update pressure
-	c.NodeCatalog[infoRoomName].Overload = infoMsg.Overload
-	// update available replicate and functionCatalog
+	node.Overload = infoMsg.Overload
+	// reocrd available replicate and update functionCatalog
 	updateReplicas := make(map[string]uint64)
 	for _, fn := range infoMsg.AvailableFunctions {
+		// init exec time record
+		if _, exist := node.AvailableFunctionsReplicas[fn.Name]; !exist {
+			node.FunctionExecutionTime[fn.Name] = new(atomic.Int64)
+			node.FunctionExecutionTime[fn.Name].Store(1)
+		}
 		updateReplicas[fn.Name] = fn.AvailableReplicas
 		// add to function Catalog if it is new function
 		if _, exist := c.FunctionCatalog[fn.Name]; !exist {
 			c.FunctionCatalog[fn.Name] = &fn
 		}
 	}
-	c.NodeCatalog[infoRoomName].AvailableFunctionsReplicas = updateReplicas
+	// delete unused exec time
+	for fname, _ := range node.AvailableFunctionsReplicas {
+		if _, exist := updateReplicas[fname]; !exist {
+			delete(node.FunctionExecutionTime, fname)
+		}
+	}
+	// update available replicate
+	node.AvailableFunctionsReplicas = updateReplicas
 
 	// update global replica
 	c.updatetReplicas()

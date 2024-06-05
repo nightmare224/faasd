@@ -168,7 +168,7 @@ func (c Catalog) streamAvailableFunctions(stream network.Stream) {
 		log.Printf("deserialized info message error: %s\n", err)
 		return
 	}
-	fmt.Println("Receive info from publisher stream:", infoMsg)
+	fmt.Printf("Receive info from publisher %s stream: %v\n", stream.Conn().RemotePeer(), infoMsg)
 
 	// update the info in the node
 	unpackNodeInfoMsg(c, infoMsg, stream.Conn().RemotePeer().String())

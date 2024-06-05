@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd"
@@ -23,6 +24,8 @@ func (node *Node) addAvailableFunctions(functionStatus types.FunctionStatus) {
 	// functionSet := append(node.AvailableFunctions, functionStatus)
 	// node.AvailableFunctions = functionSet
 	node.AvailableFunctionsReplicas[functionStatus.Name] = functionStatus.AvailableReplicas
+	node.FunctionExecutionTime[functionStatus.Name] = new(atomic.Int64)
+	node.FunctionExecutionTime[functionStatus.Name].Store(1)
 }
 
 func (node *Node) deleteAvailableFunctions(functionName string) {
@@ -32,6 +35,7 @@ func (node *Node) deleteAvailableFunctions(functionName string) {
 	// 	}
 	// }
 	delete(node.AvailableFunctionsReplicas, functionName)
+	delete(node.FunctionExecutionTime, functionName)
 }
 
 // func (node *Node) UpdatePressure(overload bool) {

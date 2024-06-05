@@ -1,7 +1,7 @@
 package catalog
 
 import (
-	"time"
+	"sync/atomic"
 
 	"github.com/openfaas/faas-provider/types"
 )
@@ -36,7 +36,8 @@ type Catalog struct {
 }
 
 type NodeInfo struct {
-	FunctionExecutionTime      map[string]time.Duration
+	// FunctionExecutionTime      map[string]time.Duration
+	FunctionExecutionTime      map[string]*atomic.Int64
 	AvailableFunctionsReplicas map[string]uint64
 	Overload                   bool
 }
@@ -83,7 +84,7 @@ func NewNode() Node {
 	return Node{
 		NodeInfo: NodeInfo{
 			AvailableFunctionsReplicas: make(map[string]uint64),
-			FunctionExecutionTime:      make(map[string]time.Duration),
+			FunctionExecutionTime:      make(map[string]*atomic.Int64),
 		},
 		NodeMetadata: NodeMetadata{},
 		infoChan:     nil,

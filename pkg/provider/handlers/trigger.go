@@ -24,7 +24,7 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 
 	enableOffload := true
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("Receive the trigger!\n")
+		// fmt.Printf("Receive the trigger!\n")
 		if enableOffload && !isOffloadRequest(r) {
 			// this should be trigger the target faas client
 			vars := mux.Vars(r)
@@ -82,20 +82,21 @@ func isOffloadRequest(r *http.Request) bool {
 func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalog.Node) (string, error) {
 
 	// var choices []*weightedrand.Chooser[T, W]
-	var execTimeProd time.Duration = 1
-	p2pIDExecTimeMapping := make(map[string]time.Duration)
+	var execTimeProd int64 = 1
+	p2pIDExecTimeMapping := make(map[string]int64)
 	for p2pID, node := range NodeCatalog {
 		// skip the overload node
 		if node.Overload {
 			continue
 		}
 		if _, exist := node.AvailableFunctionsReplicas[functionName]; exist {
-			// no execTime record yet, just gave one
-			execTime := time.Duration(1)
-			if t, exist := node.FunctionExecutionTime[functionName]; exist {
-				execTime = t
-				execTimeProd *= execTime
-			}
+			// no execTime record yet, just gave one (in fact it already init as 1)
+			// execTime := time.Duration(1)
+			// if t, exist := node.FunctionExecutionTime[functionName]; exist {
+			// execTime = t
+			execTime := node.FunctionExecutionTime[functionName].Load()
+			execTimeProd *= execTime
+			// }
 			p2pIDExecTimeMapping[p2pID] = execTime
 		}
 	}
@@ -124,7 +125,7 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 		return "", fmt.Errorf("no non-overloaded node to execution function: %s", functionName)
 	}
 
-	choices := make([]weightedrand.Choice[string, time.Duration], 0)
+	choices := make([]weightedrand.Choice[string, int64], 0)
 	// rightProd := make([]time.Duration, len(leftProd))
 	// rightProd[len(leftProd)-1] = 1
 	// for i := len(execTimeList) - 1; i >= 0; i-- {
@@ -135,7 +136,7 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 	for p2pID, execTime := range p2pIDExecTimeMapping {
 		probability := execTimeProd / execTime
 		choices = append(choices, weightedrand.NewChoice(p2pID, probability))
-		fmt.Printf("exec time map %s: %s (probability: %s)\n", p2pID, execTime, probability)
+		// fmt.Printf("exec time map %s: %s (probability: %s)\n", p2pID, execTime, probability)
 	}
 	chooser, _ := weightedrand.NewChooser(
 		choices...,
@@ -271,17 +272,18 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 	start := time.Now()
 	defer func() {
 		seconds := time.Since(start)
-		log.Printf("%s took %f seconds\n", functionName, seconds.Seconds())
+		// log.Printf("%s took %f seconds\n", functionName, seconds.Seconds())
 		actualFunctionName := functionName
 		if strings.Contains(functionName, ".") {
 			actualFunctionName = strings.TrimSuffix(functionName, "."+faasd.DefaultFunctionNamespace)
 		}
+		// does the update too often?
 		switch val := resolver.(type) {
 		case *catalog.FaasP2PMapping:
-			log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
-			c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName] = seconds
+			// log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
+			c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
 		case *InvokeResolver:
-			c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[actualFunctionName] = seconds
+			c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
 		default:
 			log.Printf("Failed to find the type of resolver when recording execution time.\n")
 		}

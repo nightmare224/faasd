@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd"
@@ -177,6 +178,8 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 		// if fn.AvailableReplicas != 0 {
 		c.FunctionCatalog[fn.Name] = &fn
 		c.NodeCatalog[c.GetSelfCatalogKey()].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
+		c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[fn.Name] = new(atomic.Int64)
+		c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[fn.Name].Store(1)
 		// }
 	}
 
