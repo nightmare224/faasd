@@ -131,7 +131,7 @@ func unpackNodeInfoMsg(c Catalog, infoMsg *NodeInfoMsg, infoRoomName string) {
 	node.Overload = infoMsg.Overload
 	// reocrd available replicate and update functionCatalog
 	updateReplicas := make(map[string]uint64)
-	for _, fn := range infoMsg.AvailableFunctions {
+	for i, fn := range infoMsg.AvailableFunctions {
 		// init exec time record
 		if _, exist := node.AvailableFunctionsReplicas[fn.Name]; !exist {
 			node.FunctionExecutionTime[fn.Name] = new(atomic.Int64)
@@ -140,7 +140,7 @@ func unpackNodeInfoMsg(c Catalog, infoMsg *NodeInfoMsg, infoRoomName string) {
 		updateReplicas[fn.Name] = fn.AvailableReplicas
 		// add to function Catalog if it is new function
 		if _, exist := c.FunctionCatalog[fn.Name]; !exist {
-			c.FunctionCatalog[fn.Name] = &fn
+			c.FunctionCatalog[fn.Name] = &infoMsg.AvailableFunctions[i]
 		}
 	}
 	// delete unused exec time

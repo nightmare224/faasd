@@ -173,10 +173,10 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 
 	node := catalog.NewNode()
 	c.NodeCatalog[c.GetSelfCatalogKey()] = &node
-	for _, fn := range fns {
+	for i, fn := range fns {
 		// TODO: should be more sphofisticate
 		// if fn.AvailableReplicas != 0 {
-		c.FunctionCatalog[fn.Name] = &fn
+		c.FunctionCatalog[fn.Name] = &fns[i]
 		c.NodeCatalog[c.GetSelfCatalogKey()].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
 		c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[fn.Name] = new(atomic.Int64)
 		c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[fn.Name].Store(1)
