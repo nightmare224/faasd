@@ -49,7 +49,7 @@ func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	}
 }
 func staticDiscovery(n *faasNotifiee) error {
-	port := types.ParseString(os.Getenv("FAAS_P2P_PORT"), "8282")
+	port := types.ParseString(os.Getenv("FAAS_P2P_PORT"), faasP2PPort)
 	dir, _ := os.ReadDir(pubKeyPeerPath)
 	for _, entry := range dir {
 		// filename is ip
