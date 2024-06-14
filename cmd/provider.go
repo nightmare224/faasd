@@ -14,14 +14,12 @@ import (
 	bootstrap "github.com/openfaas/faas-provider"
 	"github.com/openfaas/faas-provider/logs"
 	"github.com/openfaas/faas-provider/types"
-	"github.com/openfaas/faasd/pkg"
 	faasd "github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/cninetwork"
 	faasdlogs "github.com/openfaas/faasd/pkg/logs"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/provider/config"
 	"github.com/openfaas/faasd/pkg/provider/handlers"
-	"github.com/prometheus/client_golang/api"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/spf13/cobra"
@@ -102,25 +100,14 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	//TODO: need to be better (ex: delete network)
 	handlers.ResumeOrDeleteFunctions(client, cni, faasd.DefaultFunctionNamespace)
 
-	// infoLevel := catalog.ClusterLevel
 	// create the catalog to store p
 	c := catalog.NewCatalog()
 	node := initSelfCatagory(c, client)
 	// create catalog
-	// infoChan, err := catalog.InitInfoNetwork(c)
 	InitNetworkErr := catalog.InitInfoNetwork(c)
 	if InitNetworkErr != nil {
 		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
 	}
-
-	// c.InitAvailableFunctions(fns)
-
-	// var externalClients []*sdk.Client
-	// externalClients, err := connectExternalProvider()
-	// if err != nil {
-	// 	return fmt.Errorf("cannot connect external provider: %s", err)
-	// }
-	// var exteranlFaaSClients []FaaSClient
 
 	faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 
@@ -133,7 +120,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	localResolver := pkg.NewLocalResolver(path.Join(faasdwd, "hosts"))
+	localResolver := faasd.NewLocalResolver(path.Join(faasdwd, "hosts"))
 	go localResolver.Start()
 
 	// start the local update
@@ -150,7 +137,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni, baseUserSecretsPath, faasP2PMappingList, c),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},
-		Health:          handlers.MakeHealthHandler(localResolver, node),
+		Health:          handlers.MakeHealthHandler(node),
 		Info:            handlers.MakeInfoHandler(Version, GitCommit),
 		ListNamespaces:  handlers.MakeNamespacesLister(client),
 		Secrets:         handlers.MakeSecretHandler(client.NamespaceService(), baseUserSecretsPath),
@@ -191,12 +178,12 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 
 // }
 
-func initPromClient(localResolver pkg.Resolver) promv1.API {
+func initPromClient(localResolver faasd.Resolver) promv1.API {
 	got := make(chan string, 1)
 	go localResolver.Get("prometheus", got, time.Second*5)
 	ipAddress := <-got
 	close(got)
-	promClient, _ := promapi.NewClient(api.Config{
+	promClient, _ := promapi.NewClient(promapi.Config{
 		Address: fmt.Sprintf("http://%s:9090", ipAddress),
 	})
 	promAPIClient := promv1.NewAPI(promClient)

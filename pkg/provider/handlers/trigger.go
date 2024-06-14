@@ -28,8 +28,10 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		if enableOffload && !isOffloadRequest(r) {
 			// this should be trigger the target faas client
 			vars := mux.Vars(r)
-			parts := strings.Split(vars["name"], ".")
-			functionName := parts[0]
+			functionName := vars["name"]
+			if strings.Contains(vars["name"], ".") {
+				functionName = strings.TrimSuffix(vars["name"], "."+faasd.DefaultFunctionNamespace)
+			}
 			targetFunction, targetNodeMapping, err := findSuitableNode(functionName, faasP2PMappingList, c)
 			if err != nil {
 				fmt.Printf("Unable to trigger function: %v\n", err.Error())

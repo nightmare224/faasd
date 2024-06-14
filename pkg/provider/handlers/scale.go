@@ -148,7 +148,7 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 					log.Printf("error deploying %s, error: %s\n", functionName, deployErr)
 					return err
 				}
-				fn, err := waitDeployReadyAndReport(client, cni, functionName)
+				fn, err := waitDeployReadyAndReport(client, functionName)
 				if err != nil {
 					log.Printf("error waiting %s, error: %s\n", functionName, err)
 					return err

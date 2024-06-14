@@ -87,7 +87,7 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 
 		// update the catalog until the function is ready
 		go func() {
-			fn, err := waitDeployReadyAndReport(client, cni, name)
+			fn, err := waitDeployReadyAndReport(client, name)
 			if err != nil {
 				log.Printf("[Deploy] error deploying %s, error: %s\n", name, err)
 				return
@@ -97,7 +97,7 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 	}
 }
 
-func waitDeployReadyAndReport(client *containerd.Client, cni gocni.CNI, name string) (types.FunctionStatus, error) {
+func waitDeployReadyAndReport(client *containerd.Client, name string) (types.FunctionStatus, error) {
 	// timeout 60 second
 	const (
 		timeout = 60

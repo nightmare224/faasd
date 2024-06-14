@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openfaas/faasd/pkg"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
@@ -16,7 +15,7 @@ type CustomHealth struct {
 }
 
 // MakeHealthHandler returns 200/OK when healthy
-func MakeHealthHandler(localResolver pkg.Resolver, node *catalog.Node) http.HandlerFunc {
+func MakeHealthHandler(node *catalog.Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		overload_showed := r.URL.Query().Get("overload")

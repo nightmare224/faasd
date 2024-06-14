@@ -18,7 +18,7 @@ import (
 // const pubKeySelf = "/tmp/faasd-p2p/pubKey"
 const privKeySelf = "/opt/p2p/privKey"
 const faasProtocolID = protocol.ID("/faas-initialize/1.0.0")
-const faasP2PPort = "38282"
+const faasP2PPort = "30828"
 
 func InitInfoNetwork(c Catalog) error {
 	ctx := context.Background()
