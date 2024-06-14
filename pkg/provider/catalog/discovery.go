@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -21,6 +22,7 @@ import (
 const DiscoveryServiceTag = "faasd-localcluster"
 const pubKeyPeerPath = "/opt/p2p/pubKey-peer/"
 const mode = "static" //or mdns
+const maxRetriesConnection = 10
 
 // discoveryNotifee gets notified when we find a new peer via mDNS discovery
 type faasNotifiee struct {
@@ -69,7 +71,10 @@ func staticDiscovery(n *faasNotifiee) error {
 			Addrs: []ma.Multiaddr{maddr},
 		}
 		// this is when found peer subjectly, not objectly
-		n.HandlePeerFound(pi)
+		if _, exist := n.c.NodeCatalog[peerID.String()]; !exist {
+			log.Printf("Do the handle peer found from pi %s\n", peerID)
+			go n.HandlePeerFound(pi)
+		}
 	}
 	return nil
 }
@@ -84,26 +89,30 @@ func extractIP4fromMultiaddr(maddr ma.Multiaddr) string {
 }
 
 func (n *faasNotifiee) HandlePeerFound(pi peer.AddrInfo) {
-	log.Printf("Discovered new peer %s\n", pi.ID)
-	infoRoomName := pi.ID.String()
-	// create the instance in catalog and then connect,
-	// to prevent the connect function call this function again
-	// init the catagory for the find peer
-	node := NewNode()
-	node.Ip = extractIP4fromMultiaddr(pi.Addrs[0])
-	n.c.NodeCatalog[infoRoomName] = &node
-	ctx := context.Background()
-	err := n.h.Connect(ctx, pi)
-	if err != nil {
-		err := fmt.Errorf("error connecting to peer %s", err)
-		log.Fatal(err)
+	log.Printf("Enter HandlePeer Found at peer %s\n", pi.ID)
+
+	// make sure the connection with peer, if already connected would not connect aggain
+	for i := 0; i < maxRetriesConnection; i++ {
+		ctx := context.Background()
+		err := n.h.Connect(ctx, pi)
+		if err == nil {
+			log.Printf("Connect to peer %s succeed", pi.ID)
+			// subscribe to reomte peer room if not yet subscribe
+			if infoRoomName := pi.ID.String(); !n.hasSubscribed(infoRoomName) {
+				_, subErr := subscribeInfoRoom(context.Background(), n.ps, infoRoomName, n.h.ID(), n.c)
+				if subErr != nil {
+					err := fmt.Errorf("error subcribe to info room: %s", subErr)
+					log.Fatal(err)
+				}
+			}
+			return
+		}
+		log.Printf("error connecting to peer %s, retry: %d", err, i)
+		// exponential wait
+		time.Sleep(time.Duration(i<<1) * time.Second)
 	}
 
-	_, subErr := subscribeInfoRoom(ctx, n.ps, infoRoomName, n.h.ID(), n.c)
-	if subErr != nil {
-		err := fmt.Errorf("error subcribe to info room: %s", subErr)
-		log.Fatal(err)
-	}
+	log.Printf("error connecting to peer %s, ignore", pi.ID)
 
 }
 
@@ -140,19 +149,18 @@ func (n *faasNotifiee) ListenClose(network network.Network, maddr ma.Multiaddr) 
 }
 
 // send the initial available function if the new peer join
+// send the initial available function if the new peer join
 func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
 	// fmt.Println("Peer store:", n.h.Peerstore().Peers())
-	// if do not do it concurrently, the peers will block to try new stream at the same time
+
 	remotePeer := conn.RemotePeer()
-	fmt.Printf("New Peer Join: %s\n", remotePeer)
-	// if the is new peer than do the handler peer found first
-	if _, exist := n.c.NodeCatalog[remotePeer.String()]; !exist {
-		pi := peer.AddrInfo{
-			ID:    remotePeer,
-			Addrs: []ma.Multiaddr{conn.RemoteMultiaddr()},
-		}
-		n.HandlePeerFound(pi)
-	}
+	log.Printf("Peer Connected: %s\n", remotePeer)
+
+	// init the catagory for the connected peer
+	ip := extractIP4fromMultiaddr(conn.RemoteMultiaddr())
+	n.c.NewNodeCatalogEntry(remotePeer.String(), ip)
+
+	// Send the current node information, if do not do it concurrently, the peers will block to try new stream at the same time
 	go func() {
 		stream, err := n.h.NewStream(context.Background(), remotePeer, faasProtocolID)
 		if err != nil {
@@ -171,11 +179,33 @@ func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
 			log.Fatalf("Failed to send message: %v", err)
 			return
 		}
-		fmt.Println("Message sent to specific peer")
+		log.Printf("Message stream to peer %s", remotePeer)
 	}()
 
 }
 
 func (n *faasNotifiee) Disconnected(network network.Network, conn network.Conn) {
 
+	log.Printf(
+		"Encounter disconnected from %s, Status %v, Is closed %v\n"+
+			"Connected peer of topic %s: %v\n"+
+			"Connected peer of topic %s: %v\n"+
+			"hasSubscribed: %v\n",
+		conn.RemotePeer(), conn.ConnState(), conn.IsClosed(),
+		n.h.ID().String(), n.ps.ListPeers(n.h.ID().String()),
+		conn.RemotePeer().String(), n.ps.ListPeers(conn.RemotePeer().String()),
+		n.hasSubscribed(conn.RemotePeer().String()))
+
+	// TODO: maybe clean the available replica during disconnect, or just delete entire node?
+}
+
+func (n *faasNotifiee) hasSubscribed(infoRoomName string) bool {
+
+	for _, topicName := range n.ps.GetTopics() {
+		if topicName == infoRoomName {
+			return true
+		}
+	}
+
+	return false
 }

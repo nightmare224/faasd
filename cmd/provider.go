@@ -100,17 +100,6 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	//TODO: need to be better (ex: delete network)
 	handlers.ResumeOrDeleteFunctions(client, cni, faasd.DefaultFunctionNamespace)
 
-	// create the catalog to store p
-	c := catalog.NewCatalog()
-	node := initSelfCatagory(c, client)
-	// create catalog
-	InitNetworkErr := catalog.InitInfoNetwork(c)
-	if InitNetworkErr != nil {
-		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
-	}
-
-	faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
-
 	invokeResolver := handlers.NewInvokeResolver(client)
 
 	baseUserSecretsPath := path.Join(wd, "secrets")
@@ -120,12 +109,23 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// create the catalog to store p
+	c := catalog.NewCatalog()
+	node := initSelfCatagory(c, client)
+	// create catalog
+	InitNetworkErr := catalog.InitInfoNetwork(c)
+	if InitNetworkErr != nil {
+		return fmt.Errorf("cannot init info network: %s", InitNetworkErr)
+	}
+
 	localResolver := faasd.NewLocalResolver(path.Join(faasdwd, "hosts"))
 	go localResolver.Start()
 
 	// start the local update
 	promClient := initPromClient(localResolver)
 	go node.ListenUpdateInfo(client, &promClient)
+
+	faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 
 	bootstrapHandlers := types.FaaSHandlers{
 		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
@@ -158,8 +158,8 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 		panic(err)
 	}
 
-	node := catalog.NewNode()
-	c.NodeCatalog[c.GetSelfCatalogKey()] = &node
+	c.NewNodeCatalogEntry(c.GetSelfCatalogKey(), catalog.GetSelfFaasP2PIp())
+
 	for i, fn := range fns {
 		// TODO: should be more sphofisticate
 		// if fn.AvailableReplicas != 0 {
