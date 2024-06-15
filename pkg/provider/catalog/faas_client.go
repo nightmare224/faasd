@@ -123,7 +123,7 @@ func NewFaasP2PMappingList(c Catalog) FaasP2PMappingList {
 func rankClientsByRTT(faasP2PMappingList FaasP2PMappingList) {
 
 	// TODO: make this run periodically?
-	var RTTs []time.Duration
+	RTTs := make([]time.Duration, 0)
 	RTTtoMapping := make(map[time.Duration]FaasP2PMapping)
 	for _, mapping := range faasP2PMappingList {
 		// for itself it is 0
