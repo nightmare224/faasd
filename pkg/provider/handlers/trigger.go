@@ -20,7 +20,7 @@ import (
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
-func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) http.HandlerFunc {
+func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, c catalog.Catalog) http.HandlerFunc {
 
 	enableOffload := true
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +32,7 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 			if strings.Contains(vars["name"], ".") {
 				functionName = strings.TrimSuffix(vars["name"], "."+faasd.DefaultFunctionNamespace)
 			}
-			targetFunction, targetNodeMapping, err := findSuitableNode(functionName, faasP2PMappingList, c)
+			targetFunction, targetP2PID, err := findSuitableNode(functionName, c)
 			if err != nil {
 				fmt.Printf("Unable to trigger function: %v\n", err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -54,14 +54,14 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 					Requests:               targetFunction.Requests,
 					ReadOnlyRootFilesystem: targetFunction.ReadOnlyRootFilesystem,
 				}
-				targetNodeMapping.FaasClient.Deploy(context.Background(), deployment)
+				c.NodeCatalog[targetP2PID].FaasClient.Client.Deploy(context.Background(), deployment)
 				// TODO: wait unitl the function ready
 			}
 			// trigger the function here
 			// if non local than change the resolver
 			invokeResolver := resolver
-			if targetNodeMapping.P2PID != c.GetSelfCatalogKey() {
-				invokeResolver = &targetNodeMapping
+			if targetP2PID != c.GetSelfCatalogKey() {
+				invokeResolver = &c.NodeCatalog[targetP2PID].FaasClient
 			}
 			markAsOffloadRequest(r)
 			offloadRequest(w, r, config, invokeResolver, c)
@@ -147,27 +147,27 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 	return chooser.Pick(), nil
 }
 
-// find the information of functionstatus, and found the one can be deployed/triggered this function
+// find the information of functionstatus, and found the p2pid can be deployed/triggered this function
 // if the first parameter is nil, mean do not require deploy before trigger
-func findSuitableNode(functionName string, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) (*types.FunctionStatus, catalog.FaasP2PMapping, error) {
+func findSuitableNode(functionName string, c catalog.Catalog) (*types.FunctionStatus, string, error) {
 
 	targetFunction, exist := c.FunctionCatalog[functionName]
 	if !exist {
 		err := fmt.Errorf("no endpoints available for: %s", functionName)
-		return nil, catalog.FaasP2PMapping{}, err
+		return nil, "", err
 	}
 	p2pID, err := weightExecTimeScheduler(functionName, c.NodeCatalog)
 	// if can not found the suitable node to execute function, report the first non-overload node
 	if err != nil {
 		for p2pID, node := range c.NodeCatalog {
 			if !node.Overload {
-				return targetFunction, faasP2PMappingList.GetByP2PID(p2pID), nil
+				return targetFunction, p2pID, nil
 			}
 		}
 	}
 
 	// why don't change it to map?
-	return nil, faasP2PMappingList.GetByP2PID(p2pID), nil
+	return nil, p2pID, nil
 
 	// for _, mapping := range faasP2PMappingList {
 	// 	overload := c.NodeCatalog[mapping.P2PID].Overload
@@ -281,7 +281,7 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 		}
 		// does the update too often?
 		switch val := resolver.(type) {
-		case *catalog.FaasP2PMapping:
+		case *catalog.FaasClient:
 			// log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
 			c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
 		case *InvokeResolver:

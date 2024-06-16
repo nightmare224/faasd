@@ -33,6 +33,8 @@ type Catalog struct {
 	// to prevent reinsert for modify Node by using pointer
 	NodeCatalog     map[string]*Node
 	FunctionCatalog map[string]*types.FunctionStatus
+	// nodeChan        chan *Node
+	SortedP2PID []string
 }
 
 type NodeInfo struct {
@@ -55,6 +57,7 @@ type NodeMetadata struct {
 type Node struct {
 	NodeInfo
 	NodeMetadata
+	FaasClient
 	infoChan chan *NodeInfo
 }
 
@@ -77,16 +80,18 @@ func NewCatalog() Catalog {
 	return Catalog{
 		NodeCatalog:     make(map[string]*Node),
 		FunctionCatalog: make(map[string]*types.FunctionStatus),
+		SortedP2PID:     make([]string, 0, totalAmountFaasClient()),
 	}
 }
 
-func NewNodeWithIp(ip string) Node {
+func NewNodeWithIp(ip string, p2pid string) Node {
 	return Node{
 		NodeInfo: NodeInfo{
 			AvailableFunctionsReplicas: make(map[string]uint64),
 			FunctionExecutionTime:      make(map[string]*atomic.Int64),
 		},
 		NodeMetadata: NodeMetadata{Ip: ip},
+		FaasClient:   NewFaasClientWithIp(ip, p2pid),
 		infoChan:     nil,
 	}
 }
@@ -94,7 +99,9 @@ func NewNodeWithIp(ip string) Node {
 // add new node into Catalog.NodeCatalog for peerID, ignore if already exist
 func (c Catalog) NewNodeCatalogEntry(peerID string, ip string) {
 	if _, exist := c.NodeCatalog[peerID]; !exist {
-		node := NewNodeWithIp(ip)
+		node := NewNodeWithIp(ip, peerID)
 		c.NodeCatalog[peerID] = &node
+		c.RankNodeByRTT()
 	}
+
 }

@@ -125,16 +125,16 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	promClient := initPromClient(localResolver)
 	go node.ListenUpdateInfo(client, &promClient)
 
-	faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
+	// faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 
 	bootstrapHandlers := types.FaaSHandlers{
 		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
-		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, faasP2PMappingList, c),
+		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, c),
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni, c),
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),
 		FunctionStatus: handlers.MakeReplicaReaderHandler(client, c),
-		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni, baseUserSecretsPath, faasP2PMappingList, c),
+		ScaleFunction:  handlers.MakeReplicaUpdateHandler(client, cni, baseUserSecretsPath, c),
 		UpdateFunction: handlers.MakeUpdateHandler(client, cni, baseUserSecretsPath, alwaysPull),
 		// Health:          func(w http.ResponseWriter, r *http.Request) {},
 		Health:          handlers.MakeHealthHandler(node),

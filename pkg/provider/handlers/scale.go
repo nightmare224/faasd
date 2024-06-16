@@ -25,7 +25,7 @@ type ctxstring string
 
 const offloadKey ctxstring = "offload"
 
-func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMountPath string, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) func(w http.ResponseWriter, r *http.Request) {
+func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -90,7 +90,7 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 			return
 		} else if fn.Replicas < replicas { //scale up
 			log.Printf("Scale up %s: replica %d->%d\n", name, fn.Replicas, replicas)
-			err := scaleUp(name, replicas, client, cni, secretMountPath, faasP2PMappingList, c)
+			err := scaleUp(name, replicas, client, cni, secretMountPath, c)
 			if err != nil {
 				log.Printf("[Scale] %s\n", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -98,7 +98,7 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 			}
 		} else { // scale down
 			log.Printf("Scale down %s: replica %d->%d\n", name, fn.Replicas, replicas)
-			scaleDown(name, replicas, client, cni, faasP2PMappingList, c)
+			scaleDown(name, replicas, client, cni, c)
 		}
 	}
 }
@@ -112,7 +112,7 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 // }
 
 // TODO: first use the naive solution, sequentially scale up
-func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, secretMountPath string, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) error {
+func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) error {
 	scaleUpCnt := desiredReplicas - c.FunctionCatalog[functionName].Replicas
 	// try scale up the function from near to far
 	fn := c.FunctionCatalog[functionName]
@@ -136,8 +136,8 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 		log.Printf("error getting %s secret, error: %s\n", functionName, err)
 		return err
 	}
-	for i := 0; i < len(faasP2PMappingList) && scaleUpCnt > 0; i++ {
-		p2pID := faasP2PMappingList[i].P2PID
+	for i := 0; i < len(c.SortedP2PID) && scaleUpCnt > 0; i++ {
+		p2pID := c.SortedP2PID[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		// first deploy as there is no instance yet
 		if availableFunctionsReplicas == 0 {
@@ -155,7 +155,7 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 				}
 				c.AddAvailableFunctions(fn)
 			} else {
-				_, err := faasP2PMappingList[i].FaasClient.Deploy(context.Background(), deployment)
+				_, err := c.NodeCatalog[p2pID].FaasClient.Client.Deploy(context.Background(), deployment)
 				if err != nil {
 					return err
 				}
@@ -167,7 +167,7 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 		if scaleUpCnt > 0 && p2pID != c.GetSelfCatalogKey() {
 			// To memorize the next request do not do the scale decision again to prevent recursive
 			ctx := context.WithValue(context.Background(), offloadKey, "1")
-			scaleErr := faasP2PMappingList[i].FaasClient.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, scaleUpCnt)
+			scaleErr := c.NodeCatalog[p2pID].FaasClient.Client.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, scaleUpCnt)
 			// no error mean scale success
 			if scaleErr == nil {
 				scaleUpCnt = 0
@@ -177,12 +177,12 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 	return nil
 }
 
-func scaleDown(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, faasP2PMappingList catalog.FaasP2PMappingList, c catalog.Catalog) {
+func scaleDown(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, c catalog.Catalog) {
 	scaleDownCnt := c.FunctionCatalog[functionName].Replicas - desiredReplicas
 
 	// remove the function from the far instance
-	for i := len(faasP2PMappingList) - 1; i >= 0 && scaleDownCnt > 0; i++ {
-		p2pID := faasP2PMappingList[i].P2PID
+	for i := len(c.SortedP2PID) - 1; i >= 0 && scaleDownCnt > 0; i++ {
+		p2pID := c.SortedP2PID[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		if availableFunctionsReplicas > 0 {
 			// the replica is more than the scale down count
@@ -194,7 +194,7 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 				} else {
 					// To memorize the next request do not do the scale decision again to prevent recursive
 					ctx := context.WithValue(context.Background(), offloadKey, "1")
-					faasP2PMappingList[i].FaasClient.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, availableFunctionsReplicas-scaleDownCnt)
+					c.NodeCatalog[p2pID].FaasClient.Client.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, availableFunctionsReplicas-scaleDownCnt)
 				}
 				scaleDownCnt = 0
 			} else {
@@ -202,7 +202,7 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
 					c.DeleteAvailableFunctions(functionName)
 				} else {
-					faasP2PMappingList[i].FaasClient.DeleteFunction(context.Background(), functionName, faasd.DefaultFunctionNamespace)
+					c.NodeCatalog[p2pID].FaasClient.Client.DeleteFunction(context.Background(), functionName, faasd.DefaultFunctionNamespace)
 				}
 				scaleDownCnt -= availableFunctionsReplicas
 			}

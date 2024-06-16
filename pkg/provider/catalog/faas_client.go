@@ -10,26 +10,26 @@ import (
 	"os"
 	"path"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/openfaas/go-sdk"
 	probing "github.com/prometheus-community/pro-bing"
 )
 
-type FaasP2PMapping struct {
-	FaasClient *sdk.Client
-	P2PID      string
+// type FaasP2PMapping struct {
+// 	FaasClient *sdk.Client
+// 	P2PID      string
+// }
+
+type FaasClient struct {
+	Client *sdk.Client
+	// for convenient
+	P2PID string
 }
-
-// the list of FaasP2PMapping is sorted by the network distance
-type FaasP2PMappingList []FaasP2PMapping
-
-// type FaasClient sdk.Client
 
 const faasConfigPath = "/opt/faasd/secrets/faasclient/"
 
-type FaasConfig struct {
+type faasConfig struct {
 	Ip       string `json:"ip"`
 	Port     string `json:"port"`
 	Path     string `json:"path"`
@@ -37,108 +37,60 @@ type FaasConfig struct {
 	Password string `json:"password"`
 }
 
-func (mapping *FaasP2PMapping) Resolve(name string) (url.URL, error) {
-	// mapping.FaasClient.GatewayURL
-	// functionAddr := url.URL{
-	// 	Scheme: "http",
-	// 	Host:   fmt.Sprintf("%s:%s", config.Ip, config.Port),
-	// }
-
-	return *mapping.FaasClient.GatewayURL, nil
-}
-
-func (l FaasP2PMappingList) GetByP2PID(p2pID string) FaasP2PMapping {
-	for _, mapping := range l {
-		if mapping.P2PID == p2pID {
-			return mapping
+func NewFaasClientWithIp(ip string, p2pid string) FaasClient {
+	if ip == GetSelfFaasP2PIp() {
+		return FaasClient{
+			Client: nil,
+			P2PID:  GetSelfFaasP2PIp(),
 		}
 	}
 
-	return FaasP2PMapping{}
-}
-
-func NewFaasP2PMappingList(c Catalog) FaasP2PMappingList {
-
-	faasP2PMappingList := FaasP2PMappingList{
-		// also add itself into it (for itself, it don't need the faas client)
-		{
-			FaasClient: nil,
-			P2PID:      selfCatagoryKey,
-		},
-	}
-	//
-	faasClients := newFaasClients(c.NodeCatalog[selfCatagoryKey].Ip)
-	for _, client := range faasClients {
-		for p2pID, p2pNode := range c.NodeCatalog {
-			if strings.HasPrefix(client.GatewayURL.Host, p2pNode.Ip) {
-				mapping := FaasP2PMapping{
-					FaasClient: client,
-					P2PID:      p2pID,
-				}
-				faasP2PMappingList = append(faasP2PMappingList, mapping)
-				break
-			}
-		}
-
-		// testFaasClient(client)
+	faasConfigData, err := os.ReadFile(path.Join(faasConfigPath, ip))
+	if err != nil {
+		log.Printf("Error reading JSON file: %s\n", err)
+		return FaasClient{}
 	}
 
-	rankClientsByRTT(faasP2PMappingList)
+	var faasConfig faasConfig
+	err = json.Unmarshal(faasConfigData, &faasConfig)
+	if err != nil {
+		log.Printf("Failed to extract kubeconfig from json file: %s", err)
+		return FaasClient{}
+	}
+	// fmt.Println("faasConfig:", faasConfig)
+	hosturl := fmt.Sprintf("http://%s:%s", faasConfig.Ip, faasConfig.Port)
 
-	// log.Println(faasP2PMappingList)
-	return faasP2PMappingList
+	gatewayURL, _ := url.Parse(hosturl)
+	auth := &sdk.BasicAuth{
+		Username: faasConfig.User,
+		Password: faasConfig.Password,
+	}
+	client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
+	log.Printf("read faas client: %v\n", client)
+
+	return FaasClient{
+		Client: client,
+		P2PID:  p2pid,
+	}
 }
 
-// put it from the fastest client to slowest client
-// func rankClientsByRTT(clients []*sdk.Client) {
+func (f FaasClient) Resolve(name string) (url.URL, error) {
 
-// 	// make this run every
-// 	var sortedRTTClients []*sdk.Client
-// 	var RTTs []time.Duration
-// 	RTTtoIdx := make(map[time.Duration]int)
-// 	for idx, client := range clients {
-// 		startTime := time.Now()
-// 		conn, err := net.DialTimeout("tcp", client.GatewayURL.Host, 5*time.Second)
-// 		if err != nil {
-// 			fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
-// 		}
-// 		rtt := time.Since(startTime)
-// 		conn.Close()
-// 		RTTtoIdx[rtt] = idx
-// 		RTTs = append(RTTs, rtt)
-// 		fmt.Println("RTT: ", rtt, "URL: ", client.GatewayURL.Host)
-// 	}
-// 	slices.Sort(RTTs)
-// 	for _, rtt := range RTTs {
-// 		sortedRTTClients = append(sortedRTTClients, clients[RTTtoIdx[rtt]])
-// 	}
-// 	// copy back to original array
-// 	for i, client := range sortedRTTClients {
-// 		clients[i] = client
-// 	}
+	return *f.Client.GatewayURL, nil
+}
 
-// }
-
-// put it from the fastest client to slowest client
-func rankClientsByRTT(faasP2PMappingList FaasP2PMappingList) {
+// TODO: need to trigger this when there is new Node into Catalog
+// sort the P2P ID from the fastest to slowest
+func (c Catalog) RankNodeByRTT() {
 
 	// TODO: make this run periodically?
 	var RTTs []time.Duration
-	RTTtoMapping := make(map[time.Duration]FaasP2PMapping)
-	for _, mapping := range faasP2PMappingList {
+	RTTtoP2PID := make(map[time.Duration]string)
+	for p2pID, p2pNode := range c.NodeCatalog {
 		// for itself it is 0
 		rtt := time.Duration(0)
-		if mapping.P2PID != selfCatagoryKey {
-			// startTime := time.Now()
-			// can not ping to the faas gateway as this point it haven't start up yet
-			// conn, err := net.DialTimeout("tcp", mapping.FaasClient.GatewayURL.Host, 5*time.Second)
-			// if err != nil {
-			// 	fmt.Printf("Measure RTT TCP connection error: %s", err.Error())
-			// 	panic(err)
-			// }
-			// rtt = time.Since(startTime)
-			// conn.Close()
-			ip, _, _ := net.SplitHostPort(mapping.FaasClient.GatewayURL.Host)
+		if p2pID != selfCatagoryKey {
+			ip, _, _ := net.SplitHostPort(p2pNode.Client.GatewayURL.Host)
 			pinger, err := probing.NewPinger(ip)
 			if err != nil {
 				panic(err)
@@ -151,60 +103,163 @@ func rankClientsByRTT(faasP2PMappingList FaasP2PMappingList) {
 			stats := pinger.Statistics()
 			rtt = stats.AvgRtt
 		}
-		RTTtoMapping[rtt] = mapping
+		RTTtoP2PID[rtt] = p2pID
 		RTTs = append(RTTs, rtt)
-		fmt.Println("RTT: ", rtt, "P2P ID: ", mapping.P2PID)
+		fmt.Println("RTT: ", rtt, "P2P ID: ", p2pID)
 	}
 	slices.Sort(RTTs)
+
+	// make the length fit with the number of node
+	c.SortedP2PID = c.SortedP2PID[:len(RTTs)]
 	// copy back to original array
 	for i, rtt := range RTTs {
-		faasP2PMappingList[i] = RTTtoMapping[rtt]
+		c.SortedP2PID[i] = RTTtoP2PID[rtt]
 	}
 
 }
 
-// func testFaasClient(client *sdk.Client) {
-// 	fns, err := client.GetFunctions(context.Background(), "openfaas-fn")
-// 	if err != nil {
-// 		log.Printf("test error: %s", err)
-// 		return
-// 	}
-// 	log.Println(fns)
+func totalAmountFaasClient() int {
+	dir, _ := os.ReadDir(pubKeyPeerPath)
+
+	return len(dir)
+}
+
+// func (mapping *FaasP2PMapping) Resolve(name string) (url.URL, error) {
+// 	// mapping.FaasClient.GatewayURL
+// 	// functionAddr := url.URL{
+// 	// 	Scheme: "http",
+// 	// 	Host:   fmt.Sprintf("%s:%s", config.Ip, config.Port),
+// 	// }
+
+// 	return *mapping.FaasClient.GatewayURL, nil
 // }
 
-func newFaasClients(selfIP string) []*sdk.Client {
-	var faasClients []*sdk.Client
-	dir, _ := os.ReadDir(pubKeyPeerPath)
-	for _, entry := range dir {
-		filename := entry.Name()
-		// skip itself config
-		if filename == selfIP {
-			continue
-		}
-		faasConfigData, err := os.ReadFile(path.Join(faasConfigPath, filename))
-		if err != nil {
-			log.Printf("Error reading JSON file: %s\n", err)
-			continue
-		}
+// func (l FaasP2PMappingList) GetByP2PID(p2pID string) FaasP2PMapping {
+// 	for _, mapping := range l {
+// 		if mapping.P2PID == p2pID {
+// 			return mapping
+// 		}
+// 	}
 
-		var faasConfig FaasConfig
-		err = json.Unmarshal(faasConfigData, &faasConfig)
-		if err != nil {
-			log.Printf("Failed to extract kubeconfig from json file: %s", err)
-			continue
-		}
-		// fmt.Println("faasConfig:", faasConfig)
-		hosturl := fmt.Sprintf("http://%s:%s", faasConfig.Ip, faasConfig.Port)
+// 	return FaasP2PMapping{}
+// }
 
-		gatewayURL, _ := url.Parse(hosturl)
-		auth := &sdk.BasicAuth{
-			Username: faasConfig.User,
-			Password: faasConfig.Password,
-		}
-		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
-		faasClients = append(faasClients, client)
-	}
-	// jsonData, err := os.ReadFile("data.json") // Go 1.16+ simplifies file reading
+// func NewFaasP2PMappingList(c Catalog) FaasP2PMappingList {
 
-	return faasClients
-}
+// 	faasP2PMappingList := FaasP2PMappingList{
+// 		// also add itself into it (for itself, it don't need the faas client)
+// 		{
+// 			FaasClient: nil,
+// 			P2PID:      selfCatagoryKey,
+// 		},
+// 	}
+// 	// TODO: this is work around, to prevent the nodecatalog not yet init
+// 	time.Sleep(5 * time.Second)
+// 	faasClients := newFaasClients(c.NodeCatalog[selfCatagoryKey].Ip)
+// 	log.Printf("total faas clients: %v\n", faasClients)
+
+// 	for _, client := range faasClients {
+// 		for p2pID, p2pNode := range c.NodeCatalog {
+// 			if strings.HasPrefix(client.GatewayURL.Host, p2pNode.Ip) {
+// 				mapping := FaasP2PMapping{
+// 					FaasClient: client,
+// 					P2PID:      p2pID,
+// 				}
+// 				faasP2PMappingList = append(faasP2PMappingList, mapping)
+// 				break
+// 			}
+// 		}
+
+// 		// testFaasClient(client)
+// 	}
+
+// 	go func() {
+// 		rankClientsByRTT(faasP2PMappingList)
+// 		node := <-c.nodeChan
+// 		for _, client := range faasClients {
+// 			if strings.HasPrefix(client.GatewayURL.Host, node.Ip) {
+// 				mapping := FaasP2PMapping{
+// 					FaasClient: client,
+// 					P2PID:      "",
+// 				}
+// 				faasP2PMappingList = append(faasP2PMappingList, mapping)
+// 				break
+// 			}
+// 		}
+// 	}()
+
+// 	// log.Println(faasP2PMappingList)
+// 	return faasP2PMappingList
+// }
+
+// put it from the fastest client to slowest client
+// func rankClientsByRTT(faasP2PMappingList FaasP2PMappingList) {
+
+// 	// TODO: make this run periodically?
+// 	var RTTs []time.Duration
+// 	RTTtoMapping := make(map[time.Duration]FaasP2PMapping)
+// 	for _, mapping := range faasP2PMappingList {
+// 		// for itself it is 0
+// 		rtt := time.Duration(0)
+// 		if mapping.P2PID != selfCatagoryKey {
+// 			ip, _, _ := net.SplitHostPort(mapping.FaasClient.GatewayURL.Host)
+// 			pinger, err := probing.NewPinger(ip)
+// 			if err != nil {
+// 				panic(err)
+// 			}
+// 			pinger.Count = 3
+// 			err = pinger.Run() // Blocks until finished.
+// 			if err != nil {
+// 				panic(err)
+// 			}
+// 			stats := pinger.Statistics()
+// 			rtt = stats.AvgRtt
+// 		}
+// 		RTTtoMapping[rtt] = mapping
+// 		RTTs = append(RTTs, rtt)
+// 		fmt.Println("RTT: ", rtt, "P2P ID: ", mapping.P2PID)
+// 	}
+// 	slices.Sort(RTTs)
+// 	// copy back to original array
+// 	for i, rtt := range RTTs {
+// 		faasP2PMappingList[i] = RTTtoMapping[rtt]
+// 	}
+
+// }
+
+// func newFaasClients(selfIP string) []*sdk.Client {
+// 	var faasClients []*sdk.Client
+// 	dir, _ := os.ReadDir(pubKeyPeerPath)
+// 	for _, entry := range dir {
+// 		filename := entry.Name()
+// 		// skip itself config
+// 		if filename == selfIP {
+// 			continue
+// 		}
+// 		faasConfigData, err := os.ReadFile(path.Join(faasConfigPath, filename))
+// 		if err != nil {
+// 			log.Printf("Error reading JSON file: %s\n", err)
+// 			continue
+// 		}
+
+// 		var faasConfig FaasConfig
+// 		err = json.Unmarshal(faasConfigData, &faasConfig)
+// 		if err != nil {
+// 			log.Printf("Failed to extract kubeconfig from json file: %s", err)
+// 			continue
+// 		}
+// 		// fmt.Println("faasConfig:", faasConfig)
+// 		hosturl := fmt.Sprintf("http://%s:%s", faasConfig.Ip, faasConfig.Port)
+
+// 		gatewayURL, _ := url.Parse(hosturl)
+// 		auth := &sdk.BasicAuth{
+// 			Username: faasConfig.User,
+// 			Password: faasConfig.Password,
+// 		}
+// 		client := sdk.NewClient(gatewayURL, auth, http.DefaultClient)
+// 		faasClients = append(faasClients, client)
+// 	}
+// 	log.Printf("read faas clients: %v\n", faasClients)
+
+// 	return faasClients
+// }
