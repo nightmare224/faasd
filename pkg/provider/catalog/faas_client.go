@@ -84,7 +84,7 @@ func (f FaasClient) Resolve(name string) (url.URL, error) {
 func (c Catalog) RankNodeByRTT() {
 
 	// TODO: make this run periodically?
-	var RTTs []time.Duration
+	RTTs := make([]time.Duration, 0)
 	RTTtoP2PID := make(map[time.Duration]string)
 	for p2pID, p2pNode := range c.NodeCatalog {
 		// for itself it is 0
