@@ -29,6 +29,8 @@ type faasNotifiee struct {
 	h  host.Host
 	ps *pubsub.PubSub
 	c  Catalog
+	// p2p to ip
+	candidate map[string]string
 }
 
 // type faasNotifiee struct {
@@ -40,11 +42,11 @@ func setupDiscovery(h host.Host, ps *pubsub.PubSub, c Catalog) error {
 	// setup mDNS discovery to find local peers
 	switch mode {
 	case "static":
-		notifee := &faasNotifiee{h: h, ps: ps, c: c}
+		notifee := &faasNotifiee{h: h, ps: ps, c: c, candidate: make(map[string]string)}
 		h.Network().Notify(notifee)
 		return staticDiscovery(notifee)
 	case "mdns":
-		s := mdns.NewMdnsService(h, DiscoveryServiceTag, &faasNotifiee{h: h, ps: ps, c: c})
+		s := mdns.NewMdnsService(h, DiscoveryServiceTag, &faasNotifiee{h: h, ps: ps, c: c, candidate: make(map[string]string)})
 		return s.Start()
 	default:
 		return fmt.Errorf("discover peer mode %s not found", mode)
@@ -61,7 +63,9 @@ func staticDiscovery(n *faasNotifiee) error {
 		if peerID == n.h.ID() {
 			continue
 		}
-		maddr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/%s/quic-v1", peerIP, port))
+		// to record all potential candidate and there external ip
+		n.candidate[peerID.String()] = peerIP
+		maddr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%s", peerIP, port))
 		if err != nil {
 			log.Println(err)
 			return err
@@ -157,8 +161,8 @@ func (n *faasNotifiee) Connected(network network.Network, conn network.Conn) {
 	log.Printf("Peer Connected: %s\n", remotePeer)
 
 	// init the catagory for the connected peer
-	ip := extractIP4fromMultiaddr(conn.RemoteMultiaddr())
-	n.c.NewNodeCatalogEntry(remotePeer.String(), ip)
+	// ip := extractIP4fromMultiaddr(conn.RemoteMultiaddr())
+	n.c.NewNodeCatalogEntry(remotePeer.String(), n.candidate[remotePeer.String()])
 
 	// Send the current node information, if do not do it concurrently, the peers will block to try new stream at the same time
 	go func() {
