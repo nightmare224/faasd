@@ -78,8 +78,9 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 		if req.Replicas > MaxReplicas {
 			replicas = MaxReplicas
 		} else if req.Replicas == 0 {
-			log.Printf("replicas cannot be set to 0 (currently disabled), set to 1 replica\n")
-			replicas = 1
+			http.Error(w, "replicas cannot be set to 0 in OpenFaaS CE",
+				http.StatusBadRequest)
+			return
 		}
 
 		// no change or second hand scale up request.
@@ -141,6 +142,7 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		// first deploy as there is no instance yet
 		if availableFunctionsReplicas == 0 {
+			// is this necssary? will the trigger point has no function?
 			if p2pID == c.GetSelfCatalogKey() {
 				ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
 				deployErr := deploy(ctx, deployment, client, cni, namespaceSecretMountPath, false)

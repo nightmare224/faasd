@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -64,7 +65,7 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 				invokeResolver = &c.NodeCatalog[targetP2PID].FaasClient
 			}
 			markAsOffloadRequest(r)
-			offloadRequest(w, r, config, invokeResolver, c)
+			offloadRequest(w, r, config, invokeResolver, c.NodeCatalog[targetP2PID].FunctionExecutionTime)
 		} else {
 			proxy.NewHandlerFunc(config, resolver, true)(w, r)
 		}
@@ -196,7 +197,7 @@ func findSuitableNode(functionName string, c catalog.Catalog) (*types.FunctionSt
 }
 
 // maybe in other place when the platform is overload the request can be redirect
-func offloadRequest(w http.ResponseWriter, r *http.Request, config types.FaaSConfig, resolver proxy.BaseURLResolver, c catalog.Catalog) {
+func offloadRequest(w http.ResponseWriter, r *http.Request, config types.FaaSConfig, resolver proxy.BaseURLResolver, functionExecutionTime map[string]*atomic.Int64) {
 	if resolver == nil {
 		panic("NewHandlerFunc: empty proxy handler resolver, cannot be nil")
 	}
@@ -220,7 +221,7 @@ func offloadRequest(w http.ResponseWriter, r *http.Request, config types.FaaSCon
 
 	// only allow the Get and Post request
 	if r.Method == http.MethodPost || r.Method == http.MethodGet {
-		proxyRequest(w, r, proxyClient, resolver, &reverseProxy, c)
+		proxyRequest(w, r, proxyClient, resolver, &reverseProxy, functionExecutionTime)
 	} else {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -233,7 +234,7 @@ const (
 )
 
 // proxyRequest handles the actual resolution of and then request to the function service.
-func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient *http.Client, resolver proxy.BaseURLResolver, reverseProxy *httputil.ReverseProxy, c catalog.Catalog) {
+func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient *http.Client, resolver proxy.BaseURLResolver, reverseProxy *httputil.ReverseProxy, functionExecutionTime map[string]*atomic.Int64) {
 	ctx := originalReq.Context()
 
 	pathVars := mux.Vars(originalReq)
@@ -280,15 +281,16 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 			actualFunctionName = strings.TrimSuffix(functionName, "."+faasd.DefaultFunctionNamespace)
 		}
 		// does the update too often?
-		switch val := resolver.(type) {
-		case *catalog.FaasClient:
-			// log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
-			c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
-		case *InvokeResolver:
-			c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
-		default:
-			log.Printf("Failed to find the type of resolver when recording execution time.\n")
-		}
+		functionExecutionTime[actualFunctionName].Store(int64(seconds))
+		// switch val := resolver.(type) {
+		// case *catalog.FaasClient:
+		// 	// log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
+		// 	c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
+		// case *InvokeResolver:
+		// 	c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
+		// default:
+		// 	log.Printf("Failed to find the type of resolver when recording execution time.\n")
+		// }
 	}()
 
 	if v := originalReq.Header.Get("Accept"); v == "text/event-stream" {
