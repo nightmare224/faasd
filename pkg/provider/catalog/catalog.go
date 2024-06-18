@@ -34,7 +34,7 @@ type Catalog struct {
 	NodeCatalog     map[string]*Node
 	FunctionCatalog map[string]*types.FunctionStatus
 	// nodeChan        chan *Node
-	SortedP2PID []string
+	SortedP2PID *[]string
 }
 
 type NodeInfo struct {
@@ -77,10 +77,11 @@ func (c Catalog) GetSelfCatalogKey() string {
 // }
 
 func NewCatalog() Catalog {
+	sortedP2PID := make([]string, 0, totalAmountP2PPeer())
 	return Catalog{
 		NodeCatalog:     make(map[string]*Node),
 		FunctionCatalog: make(map[string]*types.FunctionStatus),
-		SortedP2PID:     make([]string, 0, totalAmountFaasClient()),
+		SortedP2PID:     &sortedP2PID,
 	}
 }
 

@@ -110,18 +110,11 @@ func (c Catalog) RankNodeByRTT() {
 	slices.Sort(RTTs)
 
 	// make the length fit with the number of node
-	c.SortedP2PID = c.SortedP2PID[:len(RTTs)]
+	*c.SortedP2PID = (*c.SortedP2PID)[:len(RTTs)]
 	// copy back to original array
 	for i, rtt := range RTTs {
-		c.SortedP2PID[i] = RTTtoP2PID[rtt]
+		(*c.SortedP2PID)[i] = RTTtoP2PID[rtt]
 	}
-
-}
-
-func totalAmountFaasClient() int {
-	dir, _ := os.ReadDir(pubKeyPeerPath)
-
-	return len(dir)
 }
 
 // func (mapping *FaasP2PMapping) Resolve(name string) (url.URL, error) {

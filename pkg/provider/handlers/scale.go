@@ -137,8 +137,9 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 		log.Printf("error getting %s secret, error: %s\n", functionName, err)
 		return err
 	}
-	for i := 0; i < len(c.SortedP2PID) && scaleUpCnt > 0; i++ {
-		p2pID := c.SortedP2PID[i]
+	log.Printf("sorted p2pid %s\n", c.SortedP2PID)
+	for i := 0; i < len(*c.SortedP2PID) && scaleUpCnt > 0; i++ {
+		p2pID := (*c.SortedP2PID)[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		// first deploy as there is no instance yet
 		if availableFunctionsReplicas == 0 {
@@ -183,8 +184,8 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 	scaleDownCnt := c.FunctionCatalog[functionName].Replicas - desiredReplicas
 
 	// remove the function from the far instance
-	for i := len(c.SortedP2PID) - 1; i >= 0 && scaleDownCnt > 0; i++ {
-		p2pID := c.SortedP2PID[i]
+	for i := len(*c.SortedP2PID) - 1; i >= 0 && scaleDownCnt > 0; i++ {
+		p2pID := (*c.SortedP2PID)[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		if availableFunctionsReplicas > 0 {
 			// the replica is more than the scale down count
