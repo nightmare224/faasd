@@ -183,7 +183,7 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 	scaleDownCnt := c.FunctionCatalog[functionName].Replicas - desiredReplicas
 
 	// remove the function from the far instance
-	for i := len(c.SortedP2PID) - 1; i >= 0 && scaleDownCnt > 0; i++ {
+	for i := len(c.SortedP2PID) - 1; i >= 0 && scaleDownCnt > 0; i-- {
 		p2pID := c.SortedP2PID[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		if availableFunctionsReplicas > 0 {

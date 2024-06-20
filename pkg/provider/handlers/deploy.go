@@ -110,7 +110,7 @@ func waitDeployReadyAndReport(client *containerd.Client, name string) (types.Fun
 	for {
 		select {
 		case <-ctx.Done():
-			err := fmt.Errorf("error getting function %s status, error: %s", name)
+			err := fmt.Errorf("error getting function %s status, timeout", name)
 			return types.FunctionStatus{}, err
 		case <-ticker.C:
 			if fn, err := GetFunctionStatus(client, name, faasd.DefaultFunctionNamespace); err == nil && fn.AvailableReplicas > 0 {
