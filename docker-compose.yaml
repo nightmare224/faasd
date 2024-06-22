@@ -21,7 +21,7 @@ services:
     #    - "127.0.0.1:8222:8222"
 
   prometheus:
-    image: docker.io/prom/prometheus:v2.49.1
+    image: docker.io/prom/prometheus:v2.51.0
 # nobody
     user: "65534"
     volumes:
@@ -71,7 +71,7 @@ services:
 
   gateway:
     # image: ghcr.io/openfaas/gateway:0.27.5
-    image: nightmare224/faas-gateway-offload:0.0.17
+    image: nightmare224/faas-gateway-offload:0.0.19
     environment:
       - basic_auth=true
       - functions_provider_url=http://faasd-provider:8081/
