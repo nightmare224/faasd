@@ -7,7 +7,7 @@ import (
 )
 
 // own itself use this key, other will use the p2p id as key
-var selfCatagoryKey string = "0"
+const selfCatagoryKey string = "0"
 
 type InfoLevel int
 
@@ -66,7 +66,7 @@ type Node struct {
 // 	availableReplicas []map[string]uint64
 // }
 
-func (c Catalog) GetSelfCatalogKey() string {
+func GetSelfCatalogKey() string {
 	return selfCatagoryKey
 }
 

@@ -84,11 +84,15 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 		}
 
 		// no change or second hand scale up request.
-		// Currently the faasd can not scale up the number of container, so if it receive the scale up from other, just stay
-		if fn.Replicas == replicas || isOffloadRequest(r) {
+
+		if fn.Replicas == replicas {
 			log.Printf("Scale %s: stay replica %d\n", name, fn.Replicas)
 			w.WriteHeader(http.StatusNoContent)
 			return
+		} else if isOffloadRequest(r) {
+			// Currently the faasd can not scale up the number of container, so if it receive the scale up from other, just stay
+			log.Printf("Scale %s: stay replica %d\n", name, fn.Replicas)
+			w.WriteHeader(http.StatusNoContent)
 		} else if fn.Replicas < replicas { //scale up
 			log.Printf("Scale up %s: replica %d->%d\n", name, fn.Replicas, replicas)
 			err := scaleUp(name, replicas, client, cni, secretMountPath, c)
@@ -137,14 +141,14 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 		log.Printf("error getting %s secret, error: %s\n", functionName, err)
 		return err
 	}
-	log.Printf("sorted p2pid %s\n", c.SortedP2PID)
+	// log.Printf("sorted p2pid %s\n", c.SortedP2PID)
 	for i := 0; i < len(*c.SortedP2PID) && scaleUpCnt > 0; i++ {
 		p2pID := (*c.SortedP2PID)[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		// first deploy as there is no instance yet
 		if availableFunctionsReplicas == 0 {
 			// is this necssary? will the trigger point has no function?
-			if p2pID == c.GetSelfCatalogKey() {
+			if p2pID == catalog.GetSelfCatalogKey() {
 				ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
 				deployErr := deploy(ctx, deployment, client, cni, namespaceSecretMountPath, false)
 				if deployErr != nil {
@@ -165,9 +169,10 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 			}
 			// deploy success mean scale up one instance
 			scaleUpCnt--
+			availableFunctionsReplicas += 1
 		}
 		// try to scale up to desire replicas (all-or-nothing)
-		if scaleUpCnt > 0 && p2pID != c.GetSelfCatalogKey() {
+		if scaleUpCnt > 0 && p2pID != catalog.GetSelfCatalogKey() {
 			// To memorize the next request do not do the scale decision again to prevent recursive
 			ctx := context.WithValue(context.Background(), offloadKey, "1")
 			scaleErr := c.NodeCatalog[p2pID].FaasClient.Client.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, scaleUpCnt)
@@ -184,13 +189,13 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 	scaleDownCnt := c.FunctionCatalog[functionName].Replicas - desiredReplicas
 
 	// remove the function from the far instance
-	for i := len(*c.SortedP2PID) - 1; i >= 0 && scaleDownCnt > 0; i-- {
+	for i := 0; i < len(*c.SortedP2PID) && scaleDownCnt > 0; i++ {
 		p2pID := (*c.SortedP2PID)[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		if availableFunctionsReplicas > 0 {
 			// the replica is more than the scale down count
 			if availableFunctionsReplicas > scaleDownCnt {
-				if p2pID == c.GetSelfCatalogKey() {
+				if p2pID == catalog.GetSelfCatalogKey() {
 					// TODO: currently the own thing can do is to delete, change to real scale down in future
 					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
 					c.DeleteAvailableFunctions(functionName)
@@ -201,7 +206,7 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 				}
 				scaleDownCnt = 0
 			} else {
-				if p2pID == c.GetSelfCatalogKey() {
+				if p2pID == catalog.GetSelfCatalogKey() {
 					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
 					c.DeleteAvailableFunctions(functionName)
 				} else {

@@ -158,19 +158,20 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 		panic(err)
 	}
 
-	c.NewNodeCatalogEntry(c.GetSelfCatalogKey(), catalog.GetSelfFaasP2PIp())
+	c.NewNodeCatalogEntry(catalog.GetSelfCatalogKey(), catalog.GetSelfFaasP2PIp())
 
+	p2pID := catalog.GetSelfCatalogKey()
 	for i, fn := range fns {
 		// TODO: should be more sphofisticate
 		// if fn.AvailableReplicas != 0 {
 		c.FunctionCatalog[fn.Name] = &fns[i]
-		c.NodeCatalog[c.GetSelfCatalogKey()].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
-		c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[fn.Name] = new(atomic.Int64)
-		c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[fn.Name].Store(1)
+		c.NodeCatalog[p2pID].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
+		c.NodeCatalog[p2pID].FunctionExecutionTime[fn.Name] = new(atomic.Int64)
+		c.NodeCatalog[p2pID].FunctionExecutionTime[fn.Name].Store(1)
 		// }
 	}
 
-	return c.NodeCatalog[c.GetSelfCatalogKey()]
+	return c.NodeCatalog[catalog.GetSelfCatalogKey()]
 }
 
 // TODO:Clean up the unsuable container in environement
