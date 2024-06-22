@@ -50,7 +50,7 @@ func runInstall(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if err := cp("alertmanger.yml", faasdwd); err != nil {
+	if err := cp("alertmanager.yml", faasdwd); err != nil {
 		return err
 	}
 
