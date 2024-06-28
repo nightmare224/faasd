@@ -120,53 +120,26 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) error {
 	scaleUpCnt := desiredReplicas - c.FunctionCatalog[functionName].Replicas
 	// try scale up the function from near to far
-	fn := c.FunctionCatalog[functionName]
-	deployment := types.FunctionDeployment{
-		Service:                fn.Name,
-		Image:                  fn.Image,
-		Namespace:              fn.Namespace,
-		EnvProcess:             fn.EnvProcess,
-		EnvVars:                fn.EnvVars,
-		Constraints:            fn.Constraints,
-		Secrets:                fn.Secrets,
-		Labels:                 fn.Labels,
-		Annotations:            fn.Annotations,
-		Limits:                 fn.Limits,
-		Requests:               fn.Requests,
-		ReadOnlyRootFilesystem: fn.ReadOnlyRootFilesystem,
-	}
-	namespaceSecretMountPath := getNamespaceSecretMountPath(secretMountPath, faasd.DefaultFunctionNamespace)
-	err := validateSecrets(namespaceSecretMountPath, fn.Secrets)
-	if err != nil {
-		log.Printf("error getting %s secret, error: %s\n", functionName, err)
-		return err
-	}
-	// log.Printf("sorted p2pid %s\n", c.SortedP2PID)
+
 	for i := 0; i < len(*c.SortedP2PID) && scaleUpCnt > 0; i++ {
 		p2pID := (*c.SortedP2PID)[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		// first deploy as there is no instance yet
 		if availableFunctionsReplicas == 0 {
 			// is this necssary? will the trigger point has no function?
-			if p2pID == catalog.GetSelfCatalogKey() {
-				ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
-				deployErr := deploy(ctx, deployment, client, cni, namespaceSecretMountPath, false)
-				if deployErr != nil {
-					log.Printf("error deploying %s, error: %s\n", functionName, deployErr)
-					return err
-				}
-				fn, err := waitDeployReadyAndReport(client, functionName)
+			err := deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, p2pID, c)
+			if err != nil {
+				log.Printf("make new function error: %v\n", err)
+				return err
+			}
+			go func() {
+				fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[p2pID].FaasClient, functionName)
 				if err != nil {
-					log.Printf("error waiting %s, error: %s\n", functionName, err)
-					return err
+					log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+					return
 				}
 				c.AddAvailableFunctions(fn)
-			} else {
-				_, err := c.NodeCatalog[p2pID].FaasClient.Client.Deploy(context.Background(), deployment)
-				if err != nil {
-					return err
-				}
-			}
+			}()
 			// deploy success mean scale up one instance
 			scaleUpCnt--
 			availableFunctionsReplicas += 1
@@ -217,4 +190,56 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 		}
 	}
 
+}
+
+func deployFunctionByP2PID(functionNamespace string, functionName string, client *containerd.Client, cni gocni.CNI, secretMountPath string, targetP2PID string, c catalog.Catalog) error {
+	targetFunction, exist := c.FunctionCatalog[functionName]
+	if !exist {
+		err := fmt.Errorf("no endpoints available for: %s", functionName)
+		return err
+	}
+	deployment := types.FunctionDeployment{
+		Service:                targetFunction.Name,
+		Image:                  targetFunction.Image,
+		Namespace:              targetFunction.Namespace,
+		EnvProcess:             targetFunction.EnvProcess,
+		EnvVars:                targetFunction.EnvVars,
+		Constraints:            targetFunction.Constraints,
+		Secrets:                targetFunction.Secrets,
+		Labels:                 targetFunction.Labels,
+		Annotations:            targetFunction.Annotations,
+		Limits:                 targetFunction.Limits,
+		Requests:               targetFunction.Requests,
+		ReadOnlyRootFilesystem: targetFunction.ReadOnlyRootFilesystem,
+	}
+	if targetP2PID == catalog.GetSelfCatalogKey() {
+		ctx := namespaces.WithNamespace(context.Background(), functionNamespace)
+		namespaceSecretMountPath := getNamespaceSecretMountPath(secretMountPath, faasd.DefaultFunctionNamespace)
+		err := validateSecrets(namespaceSecretMountPath, targetFunction.Secrets)
+		if err != nil {
+			log.Printf("error getting %s secret, error: %s\n", functionName, err)
+			return err
+		}
+		deployErr := deploy(ctx, deployment, client, cni, namespaceSecretMountPath, false)
+		if deployErr != nil {
+			log.Printf("error deploying %s, error: %s\n", functionName, deployErr)
+			return err
+		}
+		// update the catalog until the function is ready
+		go func() {
+			fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
+			if err != nil {
+				log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+				return
+			}
+			c.AddAvailableFunctions(fn)
+		}()
+	} else {
+		_, err := c.NodeCatalog[targetP2PID].FaasClient.Client.Deploy(context.Background(), deployment)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -129,7 +129,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	bootstrapHandlers := types.FaaSHandlers{
 		// FunctionProxy: proxy.NewHandlerFunc(*config, invokeResolver, false),
-		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, c),
+		FunctionProxy:  handlers.MakeTriggerHandler(*config, invokeResolver, client, cni, baseUserSecretsPath, c),
 		DeleteFunction: handlers.MakeDeleteHandler(client, cni, c),
 		DeployFunction: handlers.MakeDeployHandler(client, cni, baseUserSecretsPath, alwaysPull, c),
 		FunctionLister: handlers.MakeReadHandler(client, c),

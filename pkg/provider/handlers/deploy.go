@@ -87,7 +87,7 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 
 		// update the catalog until the function is ready
 		go func() {
-			fn, err := waitDeployReadyAndReport(client, name)
+			fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, name)
 			if err != nil {
 				log.Printf("[Deploy] error deploying %s, error: %s\n", name, err)
 				return
@@ -97,7 +97,7 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 	}
 }
 
-func waitDeployReadyAndReport(client *containerd.Client, name string) (types.FunctionStatus, error) {
+func waitDeployReadyAndReport(client *containerd.Client, faasclient catalog.FaasClient, funcationName string) (types.FunctionStatus, error) {
 	// timeout 60 second
 	const (
 		timeout = 60
@@ -110,13 +110,19 @@ func waitDeployReadyAndReport(client *containerd.Client, name string) (types.Fun
 	for {
 		select {
 		case <-ctx.Done():
-			err := fmt.Errorf("error getting function %s status, timeout", name)
+			err := fmt.Errorf("error getting function %s status, timeout", funcationName)
 			return types.FunctionStatus{}, err
 		case <-ticker.C:
-			if fn, err := GetFunctionStatus(client, name, faasd.DefaultFunctionNamespace); err == nil && fn.AvailableReplicas > 0 {
-				// c.AddAvailableFunctions(fn)
-				return fn, nil
+			if faasclient.P2PID == catalog.GetSelfCatalogKey() {
+				if fn, err := GetFunctionStatus(client, funcationName, faasd.DefaultFunctionNamespace); err == nil && fn.AvailableReplicas > 0 {
+					return fn, nil
+				}
+			} else {
+				if fn, err := faasclient.Client.GetFunction(context.Background(), funcationName, faasd.DefaultFunctionNamespace); err == nil {
+					return fn, nil
+				}
 			}
+
 		}
 	}
 }
