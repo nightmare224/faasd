@@ -77,7 +77,7 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 		replicas := req.Replicas
 		if req.Replicas > MaxReplicas {
 			replicas = MaxReplicas
-		} else if req.Replicas == 0 {
+		} else if req.Replicas <= 0 {
 			http.Error(w, "replicas cannot be set to 0 in OpenFaaS CE",
 				http.StatusBadRequest)
 			return
@@ -226,14 +226,14 @@ func deployFunctionByP2PID(functionNamespace string, functionName string, client
 			return err
 		}
 		// update the catalog until the function is ready
-		go func() {
-			fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
-			if err != nil {
-				log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-				return
-			}
-			c.AddAvailableFunctions(fn)
-		}()
+		// go func() {
+		// 	fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
+		// 	if err != nil {
+		// 		log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+		// 		return
+		// 	}
+		// 	c.AddAvailableFunctions(fn)
+		// }()
 	} else {
 		_, err := c.NodeCatalog[targetP2PID].FaasClient.Client.Deploy(context.Background(), deployment)
 		if err != nil {

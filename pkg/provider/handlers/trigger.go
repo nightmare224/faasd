@@ -22,6 +22,9 @@ import (
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 )
 
+// The factory that affect the weighted round robin (exponential)
+const weightRRfactory = 2
+
 func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) http.HandlerFunc {
 
 	// enableOffload := true
@@ -50,8 +53,8 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 				return
 			}
 		}
-		// no deploy required, just trigger
-		if _, exist := c.NodeCatalog[targetP2PID].AvailableFunctionsReplicas[functionName]; !exist {
+		// if the target node has no function, trigger the deploy first
+		if replicas, exist := c.NodeCatalog[targetP2PID].AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
 			deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, targetP2PID, c)
 			// wait until the function is ready
 			fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[targetP2PID].FaasClient, functionName)
@@ -71,7 +74,7 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		offloadRequest(w, r, config, invokeResolver, c.NodeCatalog[targetP2PID].FunctionExecutionTime)
 
 		// create a replica at the trigger point
-		if _, exist := c.NodeCatalog[catalog.GetSelfCatalogKey()].AvailableFunctionsReplicas[functionName]; !exist {
+		if replicas, exist := c.NodeCatalog[catalog.GetSelfCatalogKey()].AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
 			go func() {
 				deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, catalog.GetSelfCatalogKey(), c)
 				fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
@@ -105,12 +108,17 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 		if node.Overload {
 			continue
 		}
-		if _, exist := node.AvailableFunctionsReplicas[functionName]; exist {
+		if replicas, exist := node.AvailableFunctionsReplicas[functionName]; exist && replicas > 0 {
 			// no execTime record yet, just gave one (in fact it already init as 1)
 			// execTime := time.Duration(1)
 			// if t, exist := node.FunctionExecutionTime[functionName]; exist {
 			// execTime = t
-			execTime := node.FunctionExecutionTime[functionName].Load()
+			execTimeRaw := node.FunctionExecutionTime[functionName].Load()
+			// do power in int
+			execTime := execTimeRaw
+			for i := 1; i < weightRRfactory; i++ {
+				execTime *= execTimeRaw
+			}
 			execTimeProd *= execTime
 			// }
 			p2pIDExecTimeMapping[p2pID] = execTime
@@ -282,14 +290,15 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 
 	start := time.Now()
 	defer func() {
-		seconds := time.Since(start)
+		nanoseconds := time.Since(start)
 		// log.Printf("%s took %f seconds\n", functionName, seconds.Seconds())
 		actualFunctionName := functionName
 		if strings.Contains(functionName, ".") {
 			actualFunctionName = strings.TrimSuffix(functionName, "."+faasd.DefaultFunctionNamespace)
 		}
 		// does the update too often?
-		functionExecutionTime[actualFunctionName].Store(int64(seconds))
+		// just store milliseconds
+		functionExecutionTime[actualFunctionName].Store(int64(nanoseconds / 1000000))
 		// switch val := resolver.(type) {
 		// case *catalog.FaasClient:
 		// 	// log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)

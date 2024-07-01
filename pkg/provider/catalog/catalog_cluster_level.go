@@ -90,6 +90,11 @@ func (c Catalog) DeleteAvailableFunctions(functionName string) {
 	// update the overall replicat count
 	c.updatetReplicasWithFunctionName(functionName)
 
+	// delete the function in function catalog when there is explict delete like this
+	if c.FunctionCatalog[functionName].Replicas == 0 {
+		delete(c.FunctionCatalog, functionName)
+	}
+
 	// publish info
 	c.NodeCatalog[selfCatagoryKey].publishInfo()
 }
@@ -105,11 +110,11 @@ func (c Catalog) updatetReplicas() {
 		}
 		fmt.Printf("Update function: %s to replicas %d\n", functionName, replicas)
 		// remove the function if replicas is zero
-		if replicas == 0 {
-			delete(c.FunctionCatalog, functionName)
-		} else {
-			c.FunctionCatalog[functionName].Replicas = replicas
-		}
+		// if replicas == 0 {
+		// 	delete(c.FunctionCatalog, functionName)
+		// } else {
+		c.FunctionCatalog[functionName].Replicas = replicas
+		// }
 	}
 }
 
@@ -126,11 +131,11 @@ func (c Catalog) updatetReplicasWithFunctionName(functionName string) {
 	}
 	fmt.Printf("Update function: %s to replicas %d\n", functionName, replicas)
 	// remove the function if replicas is zero
-	if replicas == 0 {
-		delete(c.FunctionCatalog, functionName)
-	} else {
-		c.FunctionCatalog[functionName].Replicas = replicas
-	}
+	// if replicas == 0 {
+	// 	delete(c.FunctionCatalog, functionName)
+	// } else {
+	c.FunctionCatalog[functionName].Replicas = replicas
+	// }
 
 }
 
