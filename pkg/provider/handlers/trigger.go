@@ -62,7 +62,9 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 				log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
 				return
 			}
-			c.AddAvailableFunctions(fn)
+			if targetP2PID == catalog.GetSelfCatalogKey() {
+				c.AddAvailableFunctions(fn)
+			}
 		}
 		// trigger the function here
 		// if non local than change the resolver

@@ -41,7 +41,7 @@ func NewFaasClientWithIp(ip string, p2pid string) FaasClient {
 	if ip == GetSelfFaasP2PIp() {
 		return FaasClient{
 			Client: nil,
-			P2PID:  GetSelfFaasP2PIp(),
+			P2PID:  GetSelfCatalogKey(),
 		}
 	}
 
