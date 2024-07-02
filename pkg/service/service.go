@@ -51,7 +51,13 @@ func EnsureTaskRunning(ctx context.Context, client *containerd.Client, cni gocni
 			}
 		}
 		switch status.Status {
-		// kill and
+		case containerd.Running:
+			if _, err := cninetwork.GetIPAddress(name, task.Pid()); err != nil {
+				labels := map[string]string{}
+				if _, err := cninetwork.CreateCNINetwork(ctx, cni, task, labels); err != nil {
+					return err
+				}
+			}
 		case containerd.Stopped, containerd.Unknown:
 			if sigErr := task.Kill(ctx, syscall.SIGKILL); sigErr != nil {
 				log.Printf("error send SIGKILL to task %s, error: %s\n", name, sigErr)

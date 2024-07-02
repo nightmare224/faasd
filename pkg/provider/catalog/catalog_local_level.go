@@ -80,6 +80,19 @@ func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.C
 			}
 		}
 	}
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		log.Printf("Listing all containers failed: %v", err)
+	}
+	// after makeing all container run, if there is the container exist but not in record, add it
+	for _, c := range containers {
+		name := c.ID()
+		if replica, exist := node.AvailableFunctionsReplicas[name]; !exist || replica == 0 {
+			node.AvailableFunctionsReplicas[name] = 1
+			return true
+		}
+	}
+
 	// temperatory do not change the number of replica if anything failed
 	return false
 }
