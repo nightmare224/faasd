@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
@@ -21,7 +20,6 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/openfaas/faas-provider/types"
 	faasd "github.com/openfaas/faasd/pkg"
-	cninetwork "github.com/openfaas/faasd/pkg/cninetwork"
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/service"
 	"github.com/pkg/errors"
@@ -217,7 +215,7 @@ func deploy(ctx context.Context, req types.FunctionDeployment, client *container
 		return fmt.Errorf("unable to create container: %s, error: %w", name, err)
 	}
 
-	return createTask(ctx, container, cni)
+	return service.CreateTask(ctx, container, cni)
 
 }
 
@@ -243,43 +241,6 @@ func buildLabels(request *types.FunctionDeployment) (map[string]string, error) {
 	}
 
 	return labels, nil
-}
-
-func createTask(ctx context.Context, container containerd.Container, cni gocni.CNI) error {
-
-	name := container.ID()
-
-	task, taskErr := container.NewTask(ctx, cio.BinaryIO("/usr/local/bin/faasd", nil))
-
-	if taskErr != nil {
-		return fmt.Errorf("unable to start task: %s, error: %w", name, taskErr)
-	}
-
-	log.Printf("Container ID: %s\tTask ID %s:\tTask PID: %d\t\n", name, task.ID(), task.Pid())
-
-	labels := map[string]string{}
-	_, err := cninetwork.CreateCNINetwork(ctx, cni, task, labels)
-
-	if err != nil {
-		return err
-	}
-
-	ip, err := cninetwork.GetIPAddress(name, task.Pid())
-	if err != nil {
-		return err
-	}
-
-	log.Printf("%s has IP: %s.\n", name, ip)
-
-	_, waitErr := task.Wait(ctx)
-	if waitErr != nil {
-		return errors.Wrapf(waitErr, "Unable to wait for task to start: %s", name)
-	}
-
-	if startErr := task.Start(ctx); startErr != nil {
-		return errors.Wrapf(startErr, "Unable to start task: %s", name)
-	}
-	return nil
 }
 
 func prepareEnv(envProcess string, reqEnvVars map[string]string) []string {

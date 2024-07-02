@@ -7,19 +7,127 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
+	gocni "github.com/containerd/go-cni"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
+	"github.com/openfaas/faasd/pkg/cninetwork"
+	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
 
 // dockerConfigDir contains "config.json"
 const dockerConfigDir = "/var/lib/faasd/.docker/"
+
+// stop and delete the task and create it again if need, and resume if it is paused
+func EnsureTaskRunning(ctx context.Context, client *containerd.Client, cni gocni.CNI, name string) error {
+	ctr, ctrErr := client.LoadContainer(ctx, name)
+	if ctrErr != nil {
+		err := fmt.Errorf("cannot load service %s, error: %s", name, ctrErr)
+		return err
+	}
+
+	task, taskErr := ctr.Task(ctx, nil)
+	if taskErr != nil {
+		log.Printf("cannot load task for service %s, error: %s, create it again", name, taskErr)
+		if err := CreateTask(ctx, ctr, cni); err != nil {
+			log.Printf("error deploying %s, error: %s\n", name, err)
+			return err
+		}
+	} else {
+		status, statusErr := task.Status(ctx)
+		if statusErr != nil {
+			log.Printf("cannot load task status for %s, error: %s, crate it again", name, statusErr)
+			if err := CreateTask(ctx, ctr, cni); err != nil {
+				log.Printf("error deploying %s, error: %s\n", name, err)
+				return err
+			}
+		}
+		switch status.Status {
+		// kill and
+		case containerd.Stopped, containerd.Unknown:
+			if sigErr := task.Kill(ctx, syscall.SIGKILL); sigErr != nil {
+				log.Printf("error send SIGKILL to task %s, error: %s\n", name, sigErr)
+			}
+			if _, delErr := task.Delete(ctx); delErr != nil {
+				log.Printf("error deleting stopped task %s, error: %s\n", name, delErr)
+			}
+			deployErr := CreateTask(ctx, ctr, cni)
+			if deployErr != nil {
+				log.Printf("error deploying %s, error: %s\n", name, deployErr)
+				return deployErr
+			}
+		case containerd.Paused:
+			if resumeErr := task.Resume(ctx); resumeErr != nil {
+				log.Printf("error resuming task %s, error: %s\n", name, resumeErr)
+				return resumeErr
+			}
+		}
+	}
+
+	return nil
+}
+
+func EnsureAllTaskRunning(ctx context.Context, client *containerd.Client, cni gocni.CNI) error {
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		log.Print("cannot list function\n")
+		return err
+	}
+	for _, c := range containers {
+		name := c.ID()
+		err := EnsureTaskRunning(ctx, client, cni, name)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func CreateTask(ctx context.Context, container containerd.Container, cni gocni.CNI) error {
+
+	name := container.ID()
+
+	task, taskErr := container.NewTask(ctx, cio.BinaryIO("/usr/local/bin/faasd", nil))
+
+	if taskErr != nil {
+		return fmt.Errorf("unable to start task: %s, error: %w", name, taskErr)
+	}
+
+	log.Printf("Container ID: %s\tTask ID %s:\tTask PID: %d\t\n", name, task.ID(), task.Pid())
+
+	labels := map[string]string{}
+	_, err := cninetwork.CreateCNINetwork(ctx, cni, task, labels)
+
+	if err != nil {
+		return err
+	}
+
+	ip, err := cninetwork.GetIPAddress(name, task.Pid())
+	if err != nil {
+		return err
+	}
+
+	log.Printf("%s has IP: %s.\n", name, ip)
+
+	_, waitErr := task.Wait(ctx)
+	if waitErr != nil {
+		return errors.Wrapf(waitErr, "Unable to wait for task to start: %s", name)
+	}
+
+	if startErr := task.Start(ctx); startErr != nil {
+		return errors.Wrapf(startErr, "Unable to start task: %s", name)
+	}
+	return nil
+}
 
 // Remove removes a container
 func Remove(ctx context.Context, client *containerd.Client, name string) error {

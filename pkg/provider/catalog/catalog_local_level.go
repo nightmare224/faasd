@@ -8,7 +8,11 @@ import (
 	"time"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/namespaces"
+	gocni "github.com/containerd/go-cni"
 	"github.com/openfaas/faas-provider/types"
+	faasd "github.com/openfaas/faasd/pkg"
+	"github.com/openfaas/faasd/pkg/service"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
 	// v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -48,15 +52,36 @@ func (node *Node) deleteAvailableFunctions(functionName string) {
 // 	node.publishInfo()
 // }
 
-func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, clientProm *promv1.API) {
+func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, cni gocni.CNI, clientProm *promv1.API) {
 	for {
+		// make sure the available container is running
+
 		// current disable the local replica health monitor
-		if /* node.updateAvailableReplicas(clientContainerd) || */ node.updatePressure(clientProm) {
+		if node.updateAvailableReplicas(clientContainerd, cni) || node.updatePressure(clientProm) {
 			node.publishInfo()
 		}
 		time.Sleep(infoUpdateIntervalSec * time.Second)
 	}
 
+}
+
+func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.CNI) bool {
+
+	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
+	for fname, replica := range node.AvailableFunctionsReplicas {
+		if replica == 0 {
+			// make sure the container is remove when the available replicas is zero
+			service.Remove(ctx, client, fname)
+		} else {
+			err := service.EnsureTaskRunning(ctx, client, cni, fname)
+			if err != nil {
+				log.Printf("Ensure task running failed: %v", err)
+				// TODO: delete the entire container and deploy again if ensure task running failed
+			}
+		}
+	}
+	// temperatory do not change the number of replica if anything failed
+	return false
 }
 
 // preodically update the available repicas, based on the running info of the containerd

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 
@@ -22,7 +21,6 @@ func NewInvokeResolver(client *containerd.Client) *InvokeResolver {
 
 func (i *InvokeResolver) Resolve(functionName string) (url.URL, error) {
 	actualFunctionName := functionName
-	log.Printf("Resolve: %q\n", actualFunctionName)
 
 	namespace := getNamespaceOrDefault(functionName, faasd.DefaultFunctionNamespace)
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/namespaces"
 	bootstrap "github.com/openfaas/faas-provider"
 	"github.com/openfaas/faas-provider/logs"
 	"github.com/openfaas/faas-provider/types"
@@ -20,6 +22,7 @@ import (
 	"github.com/openfaas/faasd/pkg/provider/catalog"
 	"github.com/openfaas/faasd/pkg/provider/config"
 	"github.com/openfaas/faasd/pkg/provider/handlers"
+	"github.com/openfaas/faasd/pkg/service"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/spf13/cobra"
@@ -98,7 +101,11 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	defer client.Close()
 
 	//TODO: need to be better (ex: delete network)
-	handlers.ResumeOrDeleteFunctions(client, cni, faasd.DefaultFunctionNamespace)
+	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
+	if err := service.EnsureAllTaskRunning(ctx, client, cni); err != nil {
+		panic(err)
+	}
+	// handlers.ResumeOrDeleteFunctions(client, cni, faasd.DefaultFunctionNamespace)
 
 	invokeResolver := handlers.NewInvokeResolver(client)
 
@@ -123,7 +130,8 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 
 	// start the local update
 	promClient := initPromClient(localResolver)
-	go node.ListenUpdateInfo(client, &promClient)
+
+	go node.ListenUpdateInfo(client, cni, &promClient)
 
 	// faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 
