@@ -24,14 +24,12 @@ import (
 
 // The factory that affect the weighted round robin (exponential)
 const weightRRfactory = 2
+const overloadPenaltyFactory = 2
 
 func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) http.HandlerFunc {
 
 	// enableOffload := true
 	return func(w http.ResponseWriter, r *http.Request) {
-		// fmt.Printf("Receive the trigger!\n")
-		// if enableOffload && !isOffloadRequest(r) {
-		// this should be trigger the target faas client
 		vars := mux.Vars(r)
 		functionName := vars["name"]
 		if strings.Contains(vars["name"], ".") {
@@ -47,32 +45,31 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		var err error
 		if !isOffloadRequest(r) {
 			targetP2PID, err = findSuitableNode(functionName, c)
+			// the found node do not have function yet, required deployed first (implict scale up)
 			if err != nil {
-				fmt.Printf("Unable to trigger function: %v\n", err.Error())
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+				log.Printf("The trigger node may not have function yet: %v\n", err.Error())
+				// deploy on local if no available tr
+				deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, targetP2PID, c)
+				// wait until the function is ready
+				fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[targetP2PID].FaasClient, functionName)
+				if err != nil {
+					log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				if targetP2PID == catalog.GetSelfCatalogKey() {
+					c.AddAvailableFunctions(fn)
+				}
 			}
 		}
-		// if the target node has no function, trigger the deploy first
-		if replicas, exist := c.NodeCatalog[targetP2PID].AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
-			deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, targetP2PID, c)
-			// wait until the function is ready
-			fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[targetP2PID].FaasClient, functionName)
-			if err != nil {
-				log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-				return
-			}
-			if targetP2PID == catalog.GetSelfCatalogKey() {
-				c.AddAvailableFunctions(fn)
-			}
-		}
+
 		// trigger the function here
 		// if non local than change the resolver
 		invokeResolver := resolver
 		if targetP2PID != catalog.GetSelfCatalogKey() {
 			invokeResolver = &c.NodeCatalog[targetP2PID].FaasClient
+			markAsOffloadRequest(r)
 		}
-		markAsOffloadRequest(r)
 		offloadRequest(w, r, config, invokeResolver, c.NodeCatalog[targetP2PID].FunctionExecutionTime)
 
 		// create a replica at the trigger point
@@ -103,22 +100,27 @@ func isOffloadRequest(r *http.Request) bool {
 func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalog.Node) (string, error) {
 
 	// var choices []*weightedrand.Chooser[T, W]
-	var execTimeProd int64 = 1
-	p2pIDExecTimeMapping := make(map[string]int64)
+	var execTimeProd uint64 = 1
+	p2pIDExecTimeMapping := make(map[string]uint64)
 	for p2pID, node := range NodeCatalog {
 		// skip the overload node
-		if node.Overload {
-			continue
-		}
+		// if node.Overload {
+		// 	continue
+		// }
 		if replicas, exist := node.AvailableFunctionsReplicas[functionName]; exist && replicas > 0 {
 			// no execTime record yet, just gave one (in fact it already init as 1)
 			// execTime := time.Duration(1)
 			// if t, exist := node.FunctionExecutionTime[functionName]; exist {
 			// execTime = t
-			execTimeRaw := node.FunctionExecutionTime[functionName].Load()
+			execTimeRaw := uint64(node.FunctionExecutionTime[functionName].Load())
 			// do power in int
 			execTime := execTimeRaw
-			for i := 1; i < weightRRfactory; i++ {
+			factory := weightRRfactory
+			if node.Overload {
+				// gave the extra penalty if the target node is overload
+				factory += overloadPenaltyFactory
+			}
+			for i := 1; i < factory; i++ {
 				execTime *= execTimeRaw
 			}
 			execTimeProd *= execTime
@@ -148,10 +150,10 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 	// }
 	// all the node with funtion is overload
 	if len(p2pIDExecTimeMapping) == 0 {
-		return "", fmt.Errorf("no non-overloaded node to execution function: %s", functionName)
+		return "", fmt.Errorf("no node to execution function: %s", functionName)
 	}
 
-	choices := make([]weightedrand.Choice[string, int64], 0)
+	choices := make([]weightedrand.Choice[string, uint64], 0)
 	// rightProd := make([]time.Duration, len(leftProd))
 	// rightProd[len(leftProd)-1] = 1
 	// for i := len(execTimeList) - 1; i >= 0; i-- {
@@ -177,10 +179,11 @@ func findSuitableNode(functionName string, c catalog.Catalog) (string, error) {
 
 	p2pID, err := weightExecTimeScheduler(functionName, c.NodeCatalog)
 	// if can not found the suitable node to execute function, report the first non-overload node
+	// should access based on the rtt sequence, the map do not guarantee the iterated sequence of map
 	if err != nil {
-		for p2pID, node := range c.NodeCatalog {
-			if !node.Overload {
-				return p2pID, nil
+		for _, p2pID := range *c.SortedP2PID {
+			if !c.NodeCatalog[p2pID].Overload {
+				return p2pID, err
 			}
 		}
 	}

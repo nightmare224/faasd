@@ -123,6 +123,10 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 
 	for i := 0; i < len(*c.SortedP2PID) && scaleUpCnt > 0; i++ {
 		p2pID := (*c.SortedP2PID)[i]
+		if c.NodeCatalog[p2pID].Overload {
+			log.Printf("node %s is overload, skip scale up", p2pID)
+			continue
+		}
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		// first deploy as there is no instance yet
 		if availableFunctionsReplicas == 0 {

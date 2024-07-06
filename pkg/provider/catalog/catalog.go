@@ -18,6 +18,8 @@ const (
 
 const infoUpdateIntervalSec = 10
 
+// this is soft threshold, for reduce trigger probability and prevent on current node scale up, but will still accept trigger
+// the hard limit for scale up is 0.95, which is set in prometheus, will impose scale up
 const (
 	// CPU average overload threshold within one minitues
 	CPUOverloadThreshold = 0.80

@@ -37,11 +37,6 @@ func (node *Node) updateAvailableFunctions(functionStatus types.FunctionStatus) 
 }
 
 func (node *Node) deleteAvailableFunctions(functionName string) {
-	// for i, fn := range node.AvailableFunctions {
-	// 	if functionName == fn.Name {
-	// 		node.AvailableFunctions = append(node.AvailableFunctions[:i], node.AvailableFunctions[i+1:]...)
-	// 	}
-	// }
 	delete(node.AvailableFunctionsReplicas, functionName)
 	delete(node.FunctionExecutionTime, functionName)
 }
