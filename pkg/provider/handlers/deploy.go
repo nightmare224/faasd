@@ -112,12 +112,19 @@ func waitDeployReadyAndReport(client *containerd.Client, faasclient catalog.Faas
 			return types.FunctionStatus{}, err
 		case <-ticker.C:
 			if faasclient.P2PID == catalog.GetSelfCatalogKey() {
-				if fn, err := GetFunctionStatus(client, funcationName, faasd.DefaultFunctionNamespace); err == nil && fn.AvailableReplicas > 0 {
-					return fn, nil
+				if fnStatus, err := GetFunctionStatus(client, funcationName, faasd.DefaultFunctionNamespace); err == nil && fnStatus.AvailableReplicas > 0 {
+					if fn, err := GetFunction(client, funcationName, faasd.DefaultFunctionNamespace); err == nil {
+						healthURL := fmt.Sprintf("http://%s:8080/_/health", fn.IP)
+						_, healthErr := http.Get(healthURL)
+						if healthErr == nil {
+							return fnStatus, nil
+						}
+						log.Printf("health check failed on: %s\n", fn.name)
+					}
 				}
 			} else {
-				if fn, err := faasclient.Client.GetFunction(context.Background(), funcationName, faasd.DefaultFunctionNamespace); err == nil {
-					return fn, nil
+				if fnStatus, err := faasclient.Client.GetFunction(context.Background(), funcationName, faasd.DefaultFunctionNamespace); err == nil {
+					return fnStatus, nil
 				}
 			}
 
