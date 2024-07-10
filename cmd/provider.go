@@ -173,9 +173,9 @@ func initSelfCatagory(c catalog.Catalog, client *containerd.Client) *catalog.Nod
 		// TODO: should be more sphofisticate
 		// if fn.AvailableReplicas != 0 {
 		c.FunctionCatalog[fn.Name] = &fns[i]
-		c.NodeCatalog[p2pID].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
 		c.NodeCatalog[p2pID].FunctionExecutionTime[fn.Name] = new(atomic.Int64)
 		c.NodeCatalog[p2pID].FunctionExecutionTime[fn.Name].Store(1)
+		c.NodeCatalog[p2pID].AvailableFunctionsReplicas[fn.Name] = fn.AvailableReplicas
 		// }
 	}
 
