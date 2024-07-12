@@ -19,7 +19,7 @@ import (
 )
 
 // MaxReplicas licensed for OpenFaaS CE is 5/5
-const MaxReplicas uint64 = 5
+const MaxReplicas uint64 = 10
 
 type ctxstring string
 
@@ -137,6 +137,7 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 				return err
 			}
 			go func() {
+				// TODO: maybe don't need to wait?
 				fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[p2pID].FaasClient, functionName)
 				if err != nil {
 					log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
