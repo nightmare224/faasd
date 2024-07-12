@@ -12,6 +12,7 @@ import (
 	gocni "github.com/containerd/go-cni"
 	"github.com/openfaas/faas-provider/types"
 	faasd "github.com/openfaas/faasd/pkg"
+	"github.com/openfaas/faasd/pkg/cninetwork"
 	"github.com/openfaas/faasd/pkg/service"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 
@@ -27,9 +28,9 @@ func (node *Node) addAvailableFunctions(functionStatus types.FunctionStatus) {
 	// }
 	// functionSet := append(node.AvailableFunctions, functionStatus)
 	// node.AvailableFunctions = functionSet
-	node.AvailableFunctionsReplicas[functionStatus.Name] = functionStatus.AvailableReplicas
 	node.FunctionExecutionTime[functionStatus.Name] = new(atomic.Int64)
 	node.FunctionExecutionTime[functionStatus.Name].Store(1)
+	node.AvailableFunctionsReplicas[functionStatus.Name] = functionStatus.AvailableReplicas
 }
 
 func (node *Node) updateAvailableFunctions(functionStatus types.FunctionStatus) {
@@ -66,6 +67,7 @@ func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.C
 	for fname, replica := range node.AvailableFunctionsReplicas {
 		if replica == 0 {
 			// make sure the container is remove when the available replicas is zero
+			cninetwork.DeleteCNINetwork(ctx, cni, client, fname)
 			service.Remove(ctx, client, fname)
 		} else {
 			err := service.EnsureTaskRunning(ctx, client, cni, fname)

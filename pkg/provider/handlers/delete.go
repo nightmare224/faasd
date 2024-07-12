@@ -57,14 +57,14 @@ func MakeDeleteHandler(client *containerd.Client, cni gocni.CNI, c catalog.Catal
 
 		name := req.FunctionName
 
+		// update the catalog (report before delete)
+		c.DeleteAvailableFunctions(name)
+
 		delErr := DeleteFunction(client, cni, name, namespace)
 		if delErr != nil {
 			http.Error(w, delErr.Error(), http.StatusBadRequest)
 			return
 		}
-
-		// update the catalog
-		c.DeleteAvailableFunctions(name)
 
 		log.Printf("[Delete] deleted %s\n", name)
 	}

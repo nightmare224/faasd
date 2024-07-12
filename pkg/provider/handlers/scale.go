@@ -178,11 +178,12 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 			if availableFunctionsReplicas > scaleDownCnt {
 				if p2pID == catalog.GetSelfCatalogKey() {
 					// TODO: currently the own thing can do is to delete, change to real scale down in future
-					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
 					// use the update instead of delete
 					fn := *c.FunctionCatalog[functionName]
 					fn.AvailableReplicas, fn.Replicas = 0, 0
 					c.UpdateAvailableFunctions(fn)
+					// delete after report
+					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
 				} else {
 					// To memorize the next request do not do the scale decision again to prevent recursive
 					ctx := context.WithValue(context.Background(), offloadKey, "1")
@@ -191,11 +192,12 @@ func scaleDown(functionName string, desiredReplicas uint64, client *containerd.C
 				scaleDownCnt = 0
 			} else {
 				if p2pID == catalog.GetSelfCatalogKey() {
-					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
-					// c.DeleteAvailableFunctions(functionName)
 					fn := *c.FunctionCatalog[functionName]
 					fn.AvailableReplicas, fn.Replicas = 0, 0
 					c.UpdateAvailableFunctions(fn)
+					// c.DeleteAvailableFunctions(functionName)
+					// delete after report
+					DeleteFunction(client, cni, functionName, faasd.DefaultFunctionNamespace)
 				} else {
 					c.NodeCatalog[p2pID].FaasClient.Client.DeleteFunction(context.Background(), functionName, faasd.DefaultFunctionNamespace)
 				}
