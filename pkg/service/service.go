@@ -26,6 +26,24 @@ import (
 // dockerConfigDir contains "config.json"
 const dockerConfigDir = "/var/lib/faasd/.docker/"
 
+func GetTaskIP(ctx context.Context, client *containerd.Client, cni gocni.CNI, name string) (string, error) {
+	ctr, ctrErr := client.LoadContainer(ctx, name)
+	if ctrErr != nil {
+		err := fmt.Errorf("cannot load service %s, error: %s", name, ctrErr)
+		return "", err
+	}
+	task, taskErr := ctr.Task(ctx, nil)
+	if taskErr != nil {
+		err := fmt.Errorf("cannot load task for service %s, error: %s, create it again", name, taskErr)
+		return "", err
+	}
+	ip, err := cninetwork.GetIPAddress(name, task.Pid())
+	if err != nil {
+		return "", err
+	}
+	return ip, nil
+}
+
 // stop and delete the task and create it again if need, and resume if it is paused
 func EnsureTaskRunning(ctx context.Context, client *containerd.Client, cni gocni.CNI, name string) error {
 	ctr, ctrErr := client.LoadContainer(ctx, name)

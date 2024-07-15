@@ -131,7 +131,7 @@ func runProviderE(cmd *cobra.Command, _ []string) error {
 	// start the local update
 	promClient := initPromClient(localResolver)
 
-	go node.ListenUpdateInfo(client, cni, &promClient)
+	go node.ListenUpdateInfo(client, cni, &promClient, invokeResolver.Cache)
 
 	// faasP2PMappingList := catalog.NewFaasP2PMappingList(c)
 

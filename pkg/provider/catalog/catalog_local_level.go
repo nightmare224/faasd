@@ -48,12 +48,12 @@ func (node *Node) deleteAvailableFunctions(functionName string) {
 // 	node.publishInfo()
 // }
 
-func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, cni gocni.CNI, clientProm *promv1.API) {
+func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, cni gocni.CNI, clientProm *promv1.API, invokeCache map[string]string) {
 	for {
 		// make sure the available container is running
 
 		// current disable the local replica health monitor
-		if node.updateAvailableReplicas(clientContainerd, cni) || node.updatePressure(clientProm) {
+		if node.updateAvailableReplicas(clientContainerd, cni, invokeCache) || node.updatePressure(clientProm) {
 			node.publishInfo()
 		}
 		time.Sleep(infoUpdateIntervalSec * time.Second)
@@ -61,7 +61,7 @@ func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, cni gocn
 
 }
 
-func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.CNI) bool {
+func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.CNI, invokeCache map[string]string) bool {
 
 	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
 	for fname, replica := range node.AvailableFunctionsReplicas {
@@ -74,6 +74,9 @@ func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.C
 			if err != nil {
 				log.Printf("Ensure task running failed: %v", err)
 				// TODO: delete the entire container and deploy again if ensure task running failed
+			}
+			if ip, err := service.GetTaskIP(ctx, client, cni, fname); err == nil {
+				invokeCache[fname] = ip
 			}
 		}
 	}
