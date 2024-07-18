@@ -169,8 +169,12 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 func scaleDown(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, c catalog.Catalog) {
 	scaleDownCnt := c.FunctionCatalog[functionName].Replicas - desiredReplicas
 
+	// ! always set to 1, as we want only scale down in its own unit, as we don't know the gateway status of other node
+	numNode := 1
+	// numNode = len(*c.SortedP2PID)
+
 	// remove the function from the far instance
-	for i := 0; i < len(*c.SortedP2PID) && scaleDownCnt > 0; i++ {
+	for i := 0; i < numNode && scaleDownCnt > 0; i++ {
 		p2pID := (*c.SortedP2PID)[i]
 		availableFunctionsReplicas := c.NodeCatalog[p2pID].AvailableFunctionsReplicas[functionName]
 		if availableFunctionsReplicas > 0 {
