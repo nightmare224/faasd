@@ -99,6 +99,95 @@ func EnsureTaskRunning(ctx context.Context, client *containerd.Client, cni gocni
 	return nil
 }
 
+// Return the task that is in running state
+func GetTaskRunning(ctx context.Context, client *containerd.Client, cni gocni.CNI) ([]string, error) {
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		log.Print("cannot list function\n")
+		return []string{}, err
+	}
+
+	tasks := []string{}
+	for _, c := range containers {
+		name := c.ID()
+		ctr, ctrErr := client.LoadContainer(ctx, name)
+		if ctrErr != nil {
+			err := fmt.Errorf("cannot load service %s, error: %s", name, ctrErr)
+			return []string{}, err
+		}
+
+		task, taskErr := ctr.Task(ctx, nil)
+		if taskErr != nil {
+			log.Printf("cannot load task for service %s, error: %s, create it again", name, taskErr)
+			if err := CreateTask(ctx, ctr, cni); err != nil {
+				log.Printf("error deploying %s, error: %s\n", name, err)
+				return []string{}, err
+			}
+		} else {
+			status, statusErr := task.Status(ctx)
+			if statusErr != nil {
+				log.Printf("cannot load task status for %s, error: %s, crate it again", name, statusErr)
+				if err := CreateTask(ctx, ctr, cni); err != nil {
+					log.Printf("error deploying %s, error: %s\n", name, err)
+					return []string{}, err
+				}
+			}
+			if status.Status == containerd.Running {
+				tasks = append(tasks, name)
+			}
+		}
+	}
+
+	return tasks, nil
+}
+
+func EnsureAllStoppedTaskDelete(ctx context.Context, client *containerd.Client, cni gocni.CNI) error {
+	containers, err := client.Containers(ctx)
+	if err != nil {
+		log.Print("cannot list function\n")
+		return err
+	}
+
+	for _, c := range containers {
+		name := c.ID()
+		ctr, ctrErr := client.LoadContainer(ctx, name)
+		if ctrErr != nil {
+			err := fmt.Errorf("cannot load service %s, error: %s", name, ctrErr)
+			return err
+		}
+
+		task, taskErr := ctr.Task(ctx, nil)
+		if taskErr != nil {
+			log.Printf("cannot load task for service %s, error: %s, create it again", name, taskErr)
+			if err := CreateTask(ctx, ctr, cni); err != nil {
+				log.Printf("error deploying %s, error: %s\n", name, err)
+				return err
+			}
+		} else {
+			status, statusErr := task.Status(ctx)
+			if statusErr != nil {
+				log.Printf("cannot load task status for %s, error: %s, crate it again", name, statusErr)
+				if err := CreateTask(ctx, ctr, cni); err != nil {
+					log.Printf("error deploying %s, error: %s\n", name, err)
+					continue
+				}
+			}
+			if status.Status == containerd.Stopped {
+				err = cninetwork.DeleteCNINetwork(ctx, cni, client, name)
+				if err != nil {
+					log.Printf("[Delete] error removing CNI network for %s, %s\n", name, err)
+				}
+
+				if err := Remove(ctx, client, name); err != nil {
+					log.Printf("[Delete] error removing %s, %s\n", name, err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 func EnsureAllTaskRunning(ctx context.Context, client *containerd.Client, cni gocni.CNI) error {
 	containers, err := client.Containers(ctx)
 	if err != nil {

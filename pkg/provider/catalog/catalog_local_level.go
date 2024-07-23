@@ -80,21 +80,39 @@ func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.C
 			}
 		}
 	}
-	containers, err := client.Containers(ctx)
-	if err != nil {
-		log.Printf("Listing all containers failed: %v", err)
-	}
+	// containers, err := client.Containers(ctx)
+	// if err != nil {
+	// 	log.Printf("Listing all containers failed: %v", err)
+	// }
 	// after makeing all container run, if there is the container exist but not in record, add it
-	for _, c := range containers {
-		name := c.ID()
-		if replica, exist := node.AvailableFunctionsReplicas[name]; !exist || replica == 0 {
-			node.AvailableFunctionsReplicas[name] = 1
-			return true
-		}
-	}
+	// will make the deleting container back alive, so have to make sure it is in running state
+	// for _, c := range containers {
+	// 	name := c.ID()
+	// 	if replica, exist := node.AvailableFunctionsReplicas[name]; !exist || replica == 0 {
+	// 		node.AvailableFunctionsReplicas[name] = 1
+	// 		return true
+	// 	}
+	// }
+
+	// also failed, the delete is too slow
+	// tasks, err := service.GetTaskRunning(ctx, client, cni)
+	// if err != nil {
+	// 	log.Printf("Listing all containers failed: %v", err)
+	// 	return false
+	// }
+	// log.Printf("running task: %v\n", tasks)
+	updated := false
+	// for _, name := range tasks {
+	// 	if replica, exist := node.AvailableFunctionsReplicas[name]; !exist || replica == 0 {
+	// 		node.AvailableFunctionsReplicas[name] = 1
+	// 		updated = true
+	// 	}
+	// }
+
+	service.EnsureAllStoppedTaskDelete(ctx, client, cni)
 
 	// temperatory do not change the number of replica if anything failed
-	return false
+	return updated
 }
 
 // preodically update the available repicas, based on the running info of the containerd
