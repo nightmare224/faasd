@@ -136,18 +136,17 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 				log.Printf("make new function error: %v\n", err)
 				return err
 			}
-			go func() {
-				// TODO: maybe don't need to wait?
-				fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[p2pID].FaasClient, functionName)
-				if err != nil {
-					log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-					return
-				}
-				// only report add for itself
-				if p2pID == catalog.GetSelfCatalogKey() {
+			// only report add for itself
+			if p2pID == catalog.GetSelfCatalogKey() {
+				go func() {
+					fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[p2pID].FaasClient, functionName)
+					if err != nil {
+						log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+						return
+					}
 					c.AddAvailableFunctions(fn)
-				}
-			}()
+				}()
+			}
 			// deploy success mean scale up one instance
 			scaleUpCnt--
 			availableFunctionsReplicas += 1
