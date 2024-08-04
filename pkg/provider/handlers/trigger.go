@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -23,8 +24,8 @@ import (
 )
 
 // The factory that affect the weighted round robin (exponential)
-const weightRRfactory = 2
-const overloadPenaltyFactory = 2
+const weightRRfactory = 4
+const overloadPenaltyFactory = 4
 
 func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver, client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) http.HandlerFunc {
 
@@ -61,6 +62,24 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 					c.AddAvailableFunctions(fn)
 				}
 			}
+			// TODO: should only do if it is not !isOffloadRequest
+			defer func() {
+				potentailP2PID, err := explorePotentialNode(targetP2PID, functionName, c)
+				if err != nil {
+					return
+				}
+				go func() {
+					deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, potentailP2PID, c)
+					if potentailP2PID == catalog.GetSelfCatalogKey() {
+						fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
+						if err != nil {
+							log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+							return
+						}
+						c.AddAvailableFunctions(fn)
+					}
+				}()
+			}()
 		}
 
 		// trigger the function here
@@ -84,23 +103,7 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		// 		c.AddAvailableFunctions(fn)
 		// 	}()
 		// }
-		defer func() {
-			potentailP2PID, err := explorePotentialNode(targetP2PID, functionName, c)
-			if err != nil {
-				return
-			}
-			go func() {
-				deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, potentailP2PID, c)
-				if potentailP2PID == catalog.GetSelfCatalogKey() {
-					fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
-					if err != nil {
-						log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-						return
-					}
-					c.AddAvailableFunctions(fn)
-				}
-			}()
-		}()
+
 	}
 }
 func markAsOffloadRequest(r *http.Request) {
@@ -139,72 +142,52 @@ func explorePotentialNode(targetP2PID string, functionName string, c catalog.Cat
 // return the select p2pid to execution function based on last weighted exec time
 func weightExecTimeScheduler(functionName string, nodeCatalog map[string]*catalog.Node) (string, error) {
 
-	// var choices []*weightedrand.Chooser[T, W]
-	var execTimeProd uint64 = 1
-	p2pIDExecTimeMapping := make(map[string]uint64)
+	var execTimeProd float64 = 1
+	var execTimeMin float64 = math.MaxFloat64
+	p2pIDExecTimeRawMapping := make(map[string]float64)
 	for p2pID, node := range nodeCatalog {
-		// skip the overload node
-		// if node.Overload {
-		// 	continue
-		// }
+
 		if replicas, exist := node.AvailableFunctionsReplicas[functionName]; exist && replicas > 0 {
-			// no execTime record yet, just gave one (in fact it already init as 1)
-			// execTime := time.Duration(1)
-			// if t, exist := node.FunctionExecutionTime[functionName]; exist {
-			// execTime = t
-			execTimeRaw := uint64(node.FunctionExecutionTime[functionName].Load())
-			// do power in int
-			execTime := execTimeRaw
-			factory := weightRRfactory
-			if node.Overload {
-				// gave the extra penalty if the target node is overload
-				factory += overloadPenaltyFactory
+			execTimeRaw := float64(node.FunctionExecutionTime[functionName].Load())
+			if execTimeRaw == 1 {
+				// log.Printf("Host %s has exectime = 1\n", p2pID)
+				return p2pID, nil
 			}
-			for i := 1; i < factory; i++ {
-				execTime *= execTimeRaw
+			if execTimeRaw < execTimeMin {
+				execTimeMin = execTimeRaw
 			}
-			execTimeProd *= execTime
-			// }
-			p2pIDExecTimeMapping[p2pID] = execTime
+			p2pIDExecTimeRawMapping[p2pID] = execTimeRaw
 		}
 	}
-	// leftProd := []time.Duration{1}
-	// execTimeList := make([]time.Duration, 0)
-	// p2pIDList := make([]string, 0)
-	// for p2pID, node := range nodeCatalog {
-	// 	// skip the overload node
-	// 	if node.Overload {
-	// 		continue
-	// 	}
-	// 	if _, exist := node.AvailableFunctionsReplicas[functionName]; exist {
-	// 		// default exec time, no execTime record yet, just give the fastest time
-	// 		execTime := time.Duration(1)
-	// 		if t, exist := node.FunctionExecutionTime[functionName]; exist {
-	// 			// execTimeProd *= execTime
-	// 			execTime = t
-	// 		}
-	// 		leftProd = append(leftProd, leftProd[len(leftProd)-1]*execTime)
-	// 		execTimeList = append(execTimeList, execTime)
-	// 		p2pIDList = append(p2pIDList, p2pID)
-	// 	}
-	// }
+	// log.Printf("Minimal: %f\np2pIDExecTimeRawMapping: %v\n", execTimeMin, p2pIDExecTimeRawMapping)
+
+	p2pIDExecTimeMapping := make(map[string]float64)
+	for p2pID, execTimeRaw := range p2pIDExecTimeRawMapping {
+		execTime := float64(execTimeRaw) / float64(execTimeMin)
+		factory := weightRRfactory
+		if nodeCatalog[p2pID].Overload {
+			// gave the extra penalty if the target node is overload
+			factory += overloadPenaltyFactory
+		}
+		execTimeWeighted := execTime
+		for i := 1; i < factory; i++ {
+			execTimeWeighted *= execTime
+		}
+		execTimeProd *= execTimeWeighted
+		p2pIDExecTimeMapping[p2pID] = execTimeWeighted
+	}
+
 	// all the node with funtion is overload
 	if len(p2pIDExecTimeMapping) == 0 {
 		return "", fmt.Errorf("no node to execution function: %s", functionName)
 	}
 
 	choices := make([]weightedrand.Choice[string, uint64], 0)
-	// rightProd := make([]time.Duration, len(leftProd))
-	// rightProd[len(leftProd)-1] = 1
-	// for i := len(execTimeList) - 1; i >= 0; i-- {
-	// 	choices = append(choices, weightedrand.NewChoice(p2pIDList[i], rightProd[i]*leftProd[i]))
-	// 	rightProd[i-1] = rightProd[i] * execTimeList[i]
-	// }
 
 	for p2pID, execTime := range p2pIDExecTimeMapping {
-		probability := execTimeProd / execTime
+		probability := uint64(execTimeProd / execTime * 10)
 		choices = append(choices, weightedrand.NewChoice(p2pID, probability))
-		// fmt.Printf("exec time map %s: %d (probability: %d)\n", p2pID, execTime, probability)
+		// fmt.Printf("exec time map %s: %f (probability: %d)\n", p2pID, p2pIDExecTimeRawMapping[p2pID], probability)
 	}
 	chooser, errChoose := weightedrand.NewChooser(
 		choices...,
