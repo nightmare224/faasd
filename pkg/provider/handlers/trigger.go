@@ -73,17 +73,34 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		offloadRequest(w, r, config, invokeResolver, c.NodeCatalog[targetP2PID].FunctionExecutionTime)
 
 		// create a replica at the trigger point
-		if replicas, exist := c.NodeCatalog[catalog.GetSelfCatalogKey()].AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
+		// if replicas, exist := c.NodeCatalog[catalog.GetSelfCatalogKey()].AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
+		// 	go func() {
+		// 		deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, catalog.GetSelfCatalogKey(), c)
+		// 		fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
+		// 		if err != nil {
+		// 			log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+		// 			return
+		// 		}
+		// 		c.AddAvailableFunctions(fn)
+		// 	}()
+		// }
+		defer func() {
+			potentailP2PID, err := explorePotentialNode(targetP2PID, functionName, c)
+			if err != nil {
+				return
+			}
 			go func() {
-				deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, catalog.GetSelfCatalogKey(), c)
-				fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
-				if err != nil {
-					log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-					return
+				deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, potentailP2PID, c)
+				if potentailP2PID == catalog.GetSelfCatalogKey() {
+					fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
+					if err != nil {
+						log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
+						return
+					}
+					c.AddAvailableFunctions(fn)
 				}
-				c.AddAvailableFunctions(fn)
 			}()
-		}
+		}()
 	}
 }
 func markAsOffloadRequest(r *http.Request) {
@@ -95,14 +112,37 @@ func isOffloadRequest(r *http.Request) bool {
 	// If there are no values associated with the key, Get returns the empty string
 	return offload == "1"
 }
+func explorePotentialNode(targetP2PID string, functionName string, c catalog.Catalog) (string, error) {
+	currExecTime := c.NodeCatalog[targetP2PID].FunctionExecutionTime[functionName].Load()
+	potentialP2PID := ""
+	for _, p2pID := range *c.SortedP2PID {
+		// if nodeCatalog
+		node := c.NodeCatalog[p2pID]
+		if replicas, exist := node.AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
+			if _, exist := node.FunctionExecutionTime[functionName]; exist {
+				execTime := node.FunctionExecutionTime[functionName].Load()
+				if execTime < currExecTime {
+					return p2pID, nil
+				}
+				// log.Printf("p2pID: %s, execTime: %d, currExecTime: %d\n", p2pID, execTime, currExecTime)
+			} else if potentialP2PID == "" {
+				potentialP2PID = p2pID
+			}
+		}
+	}
+	if potentialP2PID == "" {
+		return "", fmt.Errorf("no potential node for function: %s", functionName)
+	}
+	return potentialP2PID, nil
+}
 
 // return the select p2pid to execution function based on last weighted exec time
-func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalog.Node) (string, error) {
+func weightExecTimeScheduler(functionName string, nodeCatalog map[string]*catalog.Node) (string, error) {
 
 	// var choices []*weightedrand.Chooser[T, W]
 	var execTimeProd uint64 = 1
 	p2pIDExecTimeMapping := make(map[string]uint64)
-	for p2pID, node := range NodeCatalog {
+	for p2pID, node := range nodeCatalog {
 		// skip the overload node
 		// if node.Overload {
 		// 	continue
@@ -131,7 +171,7 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 	// leftProd := []time.Duration{1}
 	// execTimeList := make([]time.Duration, 0)
 	// p2pIDList := make([]string, 0)
-	// for p2pID, node := range NodeCatalog {
+	// for p2pID, node := range nodeCatalog {
 	// 	// skip the overload node
 	// 	if node.Overload {
 	// 		continue
@@ -164,14 +204,14 @@ func weightExecTimeScheduler(functionName string, NodeCatalog map[string]*catalo
 	for p2pID, execTime := range p2pIDExecTimeMapping {
 		probability := execTimeProd / execTime
 		choices = append(choices, weightedrand.NewChoice(p2pID, probability))
-		// fmt.Printf("exec time map %s: %s (probability: %s)\n", p2pID, execTime, probability)
+		// fmt.Printf("exec time map %s: %d (probability: %d)\n", p2pID, execTime, probability)
 	}
 	chooser, errChoose := weightedrand.NewChooser(
 		choices...,
 	)
 	if errChoose != nil {
 		log.Println("error when making choice, maybe due to overflow")
-		for _, node := range NodeCatalog {
+		for _, node := range nodeCatalog {
 			if replicas, exist := node.AvailableFunctionsReplicas[functionName]; exist && replicas > 0 {
 				// reset
 				node.FunctionExecutionTime[functionName].Store(1)

@@ -39,7 +39,8 @@ func (node *Node) updateAvailableFunctions(functionStatus types.FunctionStatus) 
 
 func (node *Node) deleteAvailableFunctions(functionName string) {
 	delete(node.AvailableFunctionsReplicas, functionName)
-	delete(node.FunctionExecutionTime, functionName)
+	// keep the record
+	// delete(node.FunctionExecutionTime, functionName)
 }
 
 // func (node *Node) UpdatePressure(overload bool) {
