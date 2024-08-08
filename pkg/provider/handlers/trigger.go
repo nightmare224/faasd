@@ -337,16 +337,17 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 		}
 		// does the update too often?
 		// just store milliseconds
-		functionExecutionTime[actualFunctionName].Store(int64(nanoseconds / 1000000))
-		// switch val := resolver.(type) {
-		// case *catalog.FaasClient:
-		// 	// log.Printf("P2PID %s for exe time %s\n", val.P2PID, seconds)
-		// 	c.NodeCatalog[val.P2PID].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
-		// case *InvokeResolver:
-		// 	c.NodeCatalog[c.GetSelfCatalogKey()].FunctionExecutionTime[actualFunctionName].Store(int64(seconds))
-		// default:
-		// 	log.Printf("Failed to find the type of resolver when recording execution time.\n")
-		// }
+		tmpTime := functionExecutionTime[actualFunctionName].Load()
+		// average with past
+		// initial
+		if tmpTime == 1 {
+			tmpTime = int64(nanoseconds / 1000000)
+		} else {
+			// moving average
+			tmpTime = (tmpTime + int64(nanoseconds/1000000)) / 2
+		}
+		// average with past
+		functionExecutionTime[actualFunctionName].Store(tmpTime)
 	}()
 
 	if v := originalReq.Header.Get("Accept"); v == "text/event-stream" {

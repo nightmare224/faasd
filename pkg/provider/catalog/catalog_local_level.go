@@ -66,6 +66,7 @@ func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.C
 
 	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
 	for fname, replica := range node.AvailableFunctionsReplicas {
+		// scale down make replica to zero, if want to scale up from zero cause raise condition
 		if replica == 0 {
 			// make sure the container is remove when the available replicas is zero
 			cninetwork.DeleteCNINetwork(ctx, cni, client, fname)

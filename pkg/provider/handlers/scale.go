@@ -155,7 +155,7 @@ func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Cli
 		if scaleUpCnt > 0 && p2pID != catalog.GetSelfCatalogKey() {
 			// To memorize the next request do not do the scale decision again to prevent recursive
 			ctx := context.WithValue(context.Background(), offloadKey, "1")
-			scaleErr := c.NodeCatalog[p2pID].FaasClient.Client.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, scaleUpCnt)
+			scaleErr := c.NodeCatalog[p2pID].FaasClient.Client.ScaleFunction(ctx, functionName, faasd.DefaultFunctionNamespace, desiredReplicas)
 			// no error mean scale success
 			if scaleErr == nil {
 				scaleUpCnt = 0
