@@ -108,14 +108,6 @@ func MakeReplicaUpdateHandler(client *containerd.Client, cni gocni.CNI, secretMo
 	}
 }
 
-// TODO: maybe try to change it to context?
-// func isOffloadRequestCtx(ctx context.Context) bool {
-// 	offload := ctx.Value(offloadkey)
-// 	fmt.Printf("Get the context from request: %s\n", offload)
-// 	// If there are no values associated with the key, Get returns the empty string
-// 	return offload == "1"
-// }
-
 // TODO: first use the naive solution, sequentially scale up
 func scaleUp(functionName string, desiredReplicas uint64, client *containerd.Client, cni gocni.CNI, secretMountPath string, c catalog.Catalog) error {
 	scaleUpCnt := desiredReplicas - c.FunctionCatalog[functionName].Replicas
@@ -244,15 +236,6 @@ func deployFunctionByP2PID(functionNamespace string, functionName string, client
 			log.Printf("error deploying %s, error: %s\n", functionName, deployErr)
 			return err
 		}
-		// update the catalog until the function is ready
-		// go func() {
-		// 	fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
-		// 	if err != nil {
-		// 		log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-		// 		return
-		// 	}
-		// 	c.AddAvailableFunctions(fn)
-		// }()
 	} else {
 		_, err := c.NodeCatalog[targetP2PID].FaasClient.Client.Deploy(context.Background(), deployment)
 		if err != nil {

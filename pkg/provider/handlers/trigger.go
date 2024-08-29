@@ -91,19 +91,6 @@ func MakeTriggerHandler(config types.FaaSConfig, resolver proxy.BaseURLResolver,
 		}
 		offloadRequest(w, r, config, invokeResolver, c.NodeCatalog[targetP2PID].FunctionExecutionTime)
 
-		// create a replica at the trigger point
-		// if replicas, exist := c.NodeCatalog[catalog.GetSelfCatalogKey()].AvailableFunctionsReplicas[functionName]; !exist || replicas == 0 {
-		// 	go func() {
-		// 		deployFunctionByP2PID(faasd.DefaultFunctionNamespace, functionName, client, cni, secretMountPath, catalog.GetSelfCatalogKey(), c)
-		// 		fn, err := waitDeployReadyAndReport(client, c.NodeCatalog[catalog.GetSelfCatalogKey()].FaasClient, functionName)
-		// 		if err != nil {
-		// 			log.Printf("[Deploy] error deploying %s, error: %s\n", functionName, err)
-		// 			return
-		// 		}
-		// 		c.AddAvailableFunctions(fn)
-		// 	}()
-		// }
-
 	}
 }
 func markAsOffloadRequest(r *http.Request) {
@@ -127,7 +114,6 @@ func explorePotentialNode(targetP2PID string, functionName string, c catalog.Cat
 				if execTime < currExecTime {
 					return p2pID, nil
 				}
-				// log.Printf("p2pID: %s, execTime: %d, currExecTime: %d\n", p2pID, execTime, currExecTime)
 			} else if potentialP2PID == "" {
 				potentialP2PID = p2pID
 			}
@@ -187,7 +173,6 @@ func weightExecTimeScheduler(functionName string, nodeCatalog map[string]*catalo
 	for p2pID, execTime := range p2pIDExecTimeMapping {
 		probability := uint64(execTimeProd / execTime * 10)
 		choices = append(choices, weightedrand.NewChoice(p2pID, probability))
-		// fmt.Printf("exec time map %s: %f (probability: %d)\n", p2pID, p2pIDExecTimeRawMapping[p2pID], probability)
 	}
 	chooser, errChoose := weightedrand.NewChooser(
 		choices...,
@@ -222,33 +207,7 @@ func findSuitableNode(functionName string, c catalog.Catalog) (string, error) {
 		}
 	}
 
-	// why don't change it to map?
 	return p2pID, nil
-
-	// for _, mapping := range faasP2PMappingList {
-	// 	overload := c.NodeCatalog[mapping.P2PID].Overload
-	// 	if _, exist := c.NodeCatalog[mapping.P2PID].AvailableFunctionsReplicas[functionName]; exist {
-	// 		targetFunction = c.FunctionCatalog[functionName]
-	// 		// this is where the function call be trigger (already have function on it)
-	// 		if !overload {
-	// 			log.Printf("found the function %s at host %s\n", functionName, mapping.P2PID)
-	// 			return nil, mapping, nil
-	// 		}
-	// 		break
-	// 	}
-	// 	// }
-	// 	// mean no function found, but the cluster is available
-	// 	if !overload && availableNode == nil {
-	// 		availableNode = &mapping
-	// 	}
-	// }
-	// if targetFunction == nil {
-	// 	err := fmt.Errorf("no endpoints available for: %s", functionName)
-	// 	return nil, *availableNode, err
-	// }
-	// log.Printf("deploy found function %s at %s\n", functionName, availableNode.P2PID)
-	// mean no free cluster with function found, but function are somewhere, so deploy on the available cluster
-	// return targetFunction, *availableNode, nil
 }
 
 // maybe in other place when the platform is overload the request can be redirect
@@ -302,8 +261,6 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 	}
 
 	functionAddr, err := resolver.Resolve(functionName)
-	// fmt.Printf("Function Address: %+v\n\n", functionAddr)
-	// fmt.Printf("Original Request: %+v\n\n", originalReq)
 	if err != nil {
 		w.Header().Add(openFaaSInternalHeader, "proxy")
 
@@ -314,7 +271,6 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 	}
 
 	proxyReq, err := buildProxyRequest(originalReq, functionAddr, "/function/"+functionName)
-	// fmt.Printf("\nProxy Req: %+v\n", proxyReq)
 	if err != nil {
 
 		w.Header().Add(openFaaSInternalHeader, "proxy")
@@ -328,27 +284,6 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 	}
 
 	start := time.Now()
-	defer func() {
-		nanoseconds := time.Since(start)
-		// log.Printf("%s took %f seconds\n", functionName, seconds.Seconds())
-		actualFunctionName := functionName
-		if strings.Contains(functionName, ".") {
-			actualFunctionName = strings.TrimSuffix(functionName, "."+faasd.DefaultFunctionNamespace)
-		}
-		// does the update too often?
-		// just store milliseconds
-		tmpTime := functionExecutionTime[actualFunctionName].Load()
-		// average with past
-		// initial
-		if tmpTime == 1 {
-			tmpTime = int64(nanoseconds / 1000000)
-		} else {
-			// moving average
-			tmpTime = (tmpTime + int64(nanoseconds/1000000)) / 2
-		}
-		// average with past
-		functionExecutionTime[actualFunctionName].Store(tmpTime)
-	}()
 
 	if v := originalReq.Header.Get("Accept"); v == "text/event-stream" {
 		originalReq.URL = proxyReq.URL
@@ -367,6 +302,29 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 		return
 	}
 
+	if response.StatusCode != http.StatusBadRequest && response.StatusCode != http.StatusInternalServerError {
+		defer func() {
+			nanoseconds := time.Since(start)
+			actualFunctionName := functionName
+			if strings.Contains(functionName, ".") {
+				actualFunctionName = strings.TrimSuffix(functionName, "."+faasd.DefaultFunctionNamespace)
+			}
+			// does the update too often?
+			// just store milliseconds
+			tmpTime := functionExecutionTime[actualFunctionName].Load()
+			// average with past
+			// initial
+			if tmpTime == 1 {
+				tmpTime = int64(nanoseconds / 1000000)
+			} else {
+				// moving average
+				tmpTime = (tmpTime + int64(nanoseconds/1000000)) / 2
+			}
+			// average with past
+			functionExecutionTime[actualFunctionName].Store(tmpTime)
+		}()
+	}
+
 	if response.Body != nil {
 		defer response.Body.Close()
 	}
@@ -379,6 +337,7 @@ func proxyRequest(w http.ResponseWriter, originalReq *http.Request, proxyClient 
 	if response.Body != nil {
 		io.Copy(w, response.Body)
 	}
+
 }
 
 // buildProxyRequest creates a request object for the proxy request, it will ensure that

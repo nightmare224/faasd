@@ -21,13 +21,6 @@ import (
 )
 
 func (node *Node) addAvailableFunctions(functionStatus types.FunctionStatus) {
-	// for _, fn := range node.AvailableFunctions {
-	// 	if functionStatus.Name == fn.Name {
-	// 		return
-	// 	}
-	// }
-	// functionSet := append(node.AvailableFunctions, functionStatus)
-	// node.AvailableFunctions = functionSet
 	node.FunctionExecutionTime[functionStatus.Name] = new(atomic.Int64)
 	node.FunctionExecutionTime[functionStatus.Name].Store(1)
 	node.AvailableFunctionsReplicas[functionStatus.Name] = functionStatus.AvailableReplicas
@@ -39,21 +32,11 @@ func (node *Node) updateAvailableFunctions(functionStatus types.FunctionStatus) 
 
 func (node *Node) deleteAvailableFunctions(functionName string) {
 	delete(node.AvailableFunctionsReplicas, functionName)
-	// keep the record
-	// delete(node.FunctionExecutionTime, functionName)
 }
-
-// func (node *Node) UpdatePressure(overload bool) {
-// 	node.Overload = overload
-
-// 	node.publishInfo()
-// }
 
 func (node *Node) ListenUpdateInfo(clientContainerd *containerd.Client, cni gocni.CNI, clientProm *promv1.API, invokeCache map[string]string) {
 	for {
 		// make sure the available container is running
-
-		// current disable the local replica health monitor
 		if node.updateAvailableReplicas(clientContainerd, cni, invokeCache) || node.updatePressure(clientProm) {
 			node.publishInfo()
 		}
@@ -82,107 +65,12 @@ func (node *Node) updateAvailableReplicas(client *containerd.Client, cni gocni.C
 			}
 		}
 	}
-	// containers, err := client.Containers(ctx)
-	// if err != nil {
-	// 	log.Printf("Listing all containers failed: %v", err)
-	// }
-	// after makeing all container run, if there is the container exist but not in record, add it
-	// will make the deleting container back alive, so have to make sure it is in running state
-	// for _, c := range containers {
-	// 	name := c.ID()
-	// 	if replica, exist := node.AvailableFunctionsReplicas[name]; !exist || replica == 0 {
-	// 		node.AvailableFunctionsReplicas[name] = 1
-	// 		return true
-	// 	}
-	// }
-
-	// also failed, the delete is too slow
-	// tasks, err := service.GetTaskRunning(ctx, client, cni)
-	// if err != nil {
-	// 	log.Printf("Listing all containers failed: %v", err)
-	// 	return false
-	// }
-	// log.Printf("running task: %v\n", tasks)
+	// current disable publish after check
 	updated := false
-	// for _, name := range tasks {
-	// 	if replica, exist := node.AvailableFunctionsReplicas[name]; !exist || replica == 0 {
-	// 		node.AvailableFunctionsReplicas[name] = 1
-	// 		updated = true
-	// 	}
-	// }
-
 	service.EnsureAllStoppedTaskDelete(ctx, client, cni)
 
-	// temperatory do not change the number of replica if anything failed
 	return updated
 }
-
-// preodically update the available repicas, based on the running info of the containerd
-// func (node *Node) updateAvailableReplicas(client *containerd.Client) bool {
-// 	updated := false
-// 	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
-// 	for _, fn := range node.AvailableFunctions {
-// 		replicas := 0
-// 		c, err := client.LoadContainer(ctx, fn.Name)
-// 		if err != nil {
-// 			fmt.Printf("unable to find function: %s, error %s", fn.Name, err)
-// 			continue
-// 		}
-// 		task, err := c.Task(ctx, nil)
-// 		if err != nil {
-// 			fmt.Printf("unable to get task: %s, error %s", fn.Name, err)
-// 			continue
-// 		}
-// 		svc, err := task.Status(ctx)
-// 		if err != nil {
-// 			fmt.Printf("unable to get task status for container: %s, error: %s", fn.Name, err)
-// 			continue
-// 		}
-// 		if svc.Status == "running" {
-// 			replicas = 1
-// 		}
-// 		if uint64(replicas) != fn.AvailableReplicas {
-// 			fn.AvailableReplicas = uint64(replicas)
-// 			updated = true
-// 		}
-// 	}
-// 	return updated
-// }
-
-// preodically update the available repicas, based on the running info of the containerd
-// func (node *Node) updateAvailableReplicasWithFunctionName(client *containerd.Client, functionName string) bool {
-// 	updated := false
-// 	ctx := namespaces.WithNamespace(context.Background(), faasd.DefaultFunctionNamespace)
-// 	for _, fn := range node.AvailableFunctions {
-// 		if functionName == fn.Name {
-// 			replicas := 0
-// 			c, err := client.LoadContainer(ctx, fn.Name)
-// 			if err != nil {
-// 				fmt.Printf("unable to find function: %s, error %s", fn.Name, err)
-// 				break
-// 			}
-// 			task, err := c.Task(ctx, nil)
-// 			if err != nil {
-// 				fmt.Printf("unable to get task: %s, error %s", fn.Name, err)
-// 				break
-// 			}
-// 			svc, err := task.Status(ctx)
-// 			if err != nil {
-// 				fmt.Printf("unable to get task status for container: %s, error: %s", fn.Name, err)
-// 				break
-// 			}
-// 			if svc.Status == "running" {
-// 				replicas = 1
-// 			}
-// 			if uint64(replicas) != fn.AvailableReplicas {
-// 				fn.AvailableReplicas = uint64(replicas)
-// 				updated = true
-// 			}
-// 			break
-// 		}
-// 	}
-// 	return updated
-// }
 
 // add the overloaded infomation in it
 func (node *Node) updatePressure(client *promv1.API) bool {

@@ -15,7 +15,6 @@ import (
 	"github.com/openfaas/faas-provider/types"
 )
 
-// const pubKeySelf = "/tmp/faasd-p2p/pubKey"
 const privKeySelf = "/opt/p2p/privKey"
 const faasProtocolID = protocol.ID("/faas-initialize/1.0.0")
 const faasP2PIp = "0.0.0.0"

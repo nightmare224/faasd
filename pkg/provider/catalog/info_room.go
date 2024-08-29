@@ -3,7 +3,6 @@ package catalog
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"sync/atomic"
 
@@ -91,24 +90,15 @@ func (ir *InfoRoom) subscribeLoop(c Catalog, infoRoomName string) {
 			continue
 		}
 
-		// this should not happen as it it would not enter this subscribe loop
-		// only process messages delivered by others
-		// if msg.ReceivedFrom == ir.selfID {
-		// 	continue
-		// }
-
 		infoMsg := new(NodeInfoMsg)
 		err = json.Unmarshal(msg.Data, infoMsg)
 		if err != nil {
 			log.Printf("deserialized info message error: %s\n", err)
 			continue
 		}
-		fmt.Println("Receive info from publisher:", infoMsg)
 
 		// update the info in the node
-		// c[infoRoomName].NodeInfo = *info
 		unpackNodeInfoMsg(c, infoMsg, infoRoomName)
-		// c.updatetReplicasWithNodeInfo(*info)
 	}
 }
 func packNodeInfoMsg(c Catalog, info *NodeInfo) *NodeInfoMsg {
@@ -141,9 +131,6 @@ func unpackNodeInfoMsg(c Catalog, infoMsg *NodeInfoMsg, infoRoomName string) {
 		if replica, exist := node.AvailableFunctionsReplicas[fn.Name]; (!exist && fn.AvailableReplicas > 0) || (exist && replica < fn.AvailableReplicas) {
 			node.FunctionExecutionTime[fn.Name].Store(1)
 		}
-		// reset to 1 when update, gave a new chance
-		// node.FunctionExecutionTime[fn.Name].Store(1)
-
 		// add to function Catalog if it is new function
 		if _, exist := c.FunctionCatalog[fn.Name]; !exist {
 			c.FunctionCatalog[fn.Name] = &infoMsg.AvailableFunctions[i]
@@ -151,13 +138,7 @@ func unpackNodeInfoMsg(c Catalog, infoMsg *NodeInfoMsg, infoRoomName string) {
 
 		updateReplicas[fn.Name] = fn.AvailableReplicas
 	}
-	// delete unused exec time
-	// for fname, _ := range node.AvailableFunctionsReplicas {
-	// 	if _, exist := updateReplicas[fname]; !exist {
-	// 		delete(node.FunctionExecutionTime, fname)
-	// 	}
-	// }
-	// update available replicate
+
 	node.AvailableFunctionsReplicas = updateReplicas
 
 	// update global replica

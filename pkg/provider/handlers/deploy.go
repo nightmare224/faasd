@@ -78,7 +78,7 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 
 		deployErr := deploy(ctx, req, client, cni, namespaceSecretMountPath, alwaysPull)
 		if deployErr != nil {
-			log.Printf("[Deploy] error deploying %s, error: %s\n", name, deployErr)
+			// log.Printf("[Deploy] error deploying %s, error: %s\n", name, deployErr)
 			http.Error(w, deployErr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -98,13 +98,16 @@ func MakeDeployHandler(client *containerd.Client, cni gocni.CNI, secretMountPath
 func waitDeployReadyAndReport(client *containerd.Client, faasclient catalog.FaasClient, funcationName string) (types.FunctionStatus, error) {
 	// timeout 60 second
 	const (
-		timeout = 60
-		step    = 5
+		timeout             = 60
+		step                = 5
+		initialDelaySeconds = 5
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
 	defer cancel()
 	ticker := time.NewTicker(step * time.Second)
 	defer ticker.Stop()
+
+	time.Sleep(time.Second * initialDelaySeconds)
 	for {
 		select {
 		case <-ctx.Done():
